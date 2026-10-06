@@ -1,13 +1,13 @@
+
 import json
+
 import pytest
+import pytest_asyncio
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings
+from semantic_kernel.functions import KernelArguments, KernelFunctionFromPrompt
+from semantic_kernel.prompt_template import PromptTemplateConfig
 
-from semantic_kernel.functions import KernelFunction
-from semantic_kernel.connectors.ai.open_ai import (
-    OpenAIChatPromptExecutionSettings,
-)
-
-from src.DatabaseAgent.AgentKernelFcatory import AgentKernelFactory
-from src.DatabaseAgent.DatabaseAgentFactory import DatabaseAgentFactory
+from src.DatabaseAgent import AgentKernelFactory, DatabaseAgentFactory
 
 
 TEST_CASES = [
@@ -160,98 +160,62 @@ TEST_CASES = [
 ]
 
 
-class TestDatabaseAgent:
-
-    @pytest.fixture(scope="class", autouse=True)
-    def setup(self, request):
-
-        # 1. Configure kernel and vector stores
-        kernel = AgentKernelFactory.configure_kernel()
-
-        # 2. Create database agent
-        agent = DatabaseAgentFactory.create_agent(
-            kernel,
-            update=True,
-        )
-
-        request.cls.kernel = kernel
-        request.cls.agent = agent
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "question,expected_answer",
-        TEST_CASES,
-    )
-    async def test_agent_can_answer_to_data(
-        self,
-        question,
-        expected_answer,
-    ):
-
-        # 3. Ask the database agent
-        responses = self.agent.invoke(question)
-
-        async for response in responses:
-
-            assert response is not None
-
-            # 4. Use ChatGPT LLM to evaluate the answer
-            evaluator = KernelFunction.from_prompt(
-                prompt=f"""
-Evaluate the semantic similarity between the expected answer
-and the actual response to the given question.
+EVAL_PROMPT = """
+Evaluate the semantic similarity between the expected answer and the actual response to the given question.
 
 # Guidelines
 
-- The similarity should be assessed on a scale from 0 to 1,
-  where 0 indicates no similarity and 1 indicates identical meaning.
+- Score from 0 to 1: 0 = no similarity, 1 = identical meaning.
 - Consider both content accuracy and completeness.
 - Do not provide any explanation or additional commentary.
-
-# Steps
-
-1. Compare the Source of Truth with the Second Sentence.
-2. Analyze accuracy, completeness, and meaning.
-3. Assign a score between 0 and 1.
 
 # Output Format
 
 Return the similarity score as JSON:
 
-{{
-    "score": SCORE
-}}
+{ "score": SCORE }
 
 ## Question:
-{question}
+{{$question}}
 
 ## Source of truth:
-{expected_answer}
+{{$expected}}
 
 ## Second sentence:
-{response}
-""",
-                function_name="evaluate_answer",
-                execution_settings=OpenAIChatPromptExecutionSettings(
-                    max_tokens=4096,
-                    temperature=0.0000000001,
-                    top_p=0.0000000001,
-                    response_format="json_object",
-                ),
-            )
+{{$actual}}
+"""
 
-            evaluation_result = await self.kernel.invoke(evaluator)
 
-            evaluation = json.loads(str(evaluation_result))
 
-            score = evaluation["score"]
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def env():
+    ctx = AgentKernelFactory.configure_kernel()
+    agent = await DatabaseAgentFactory.create_agent(ctx, update=True)
+    return ctx.kernel, agent
 
-            print(f"\nScore: {score}")
-            print(f"Answer: {response}")
-            print(f"Expected: {expected_answer}")
 
-            # 5. Require at least 0.8 similarity
-            if score < 0.8:
-                pytest.fail(
-                    f"Answer is not similar enough. Score: {score}"
-                )
+@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.parametrize("question,expected_answer", TEST_CASES)
+async def test_agent_can_answer_to_data(env, question, expected_answer):
+    kernel, agent = env
+
+    answer = await agent.invoke(question)
+    assert answer, "agent returned no answer"
+
+    evaluator = KernelFunctionFromPrompt(
+        function_name="evaluate_answer",
+        prompt_template_config=PromptTemplateConfig(
+            template=EVAL_PROMPT,
+            allow_dangerously_set_content=True,  # keep quotes/& in the tables unescaped
+            execution_settings=OpenAIChatPromptExecutionSettings(
+                max_tokens=4096, temperature=0, response_format={"type": "json_object"}
+            ),
+        ),
+    )
+    result = await kernel.invoke(
+        evaluator, KernelArguments(question=question, expected=expected_answer, actual=answer)
+    )
+    score = json.loads(str(result))["score"]
+
+    print(f"\nScore: {score}\nAnswer: {answer}\nExpected: {expected_answer}")
+    assert score >= 0.8, f"Answer is not similar enough. Score: {score}"
