@@ -1,4 +1,4 @@
-﻿You are an expert of {{providerName}}.
+You are an expert of {{providerName}}.
 
 You should generate a natural language description explaining the purpose of a database table based on its column names and types.
 
@@ -64,47 +64,47 @@ Table Definition:
 ```
 
 **Output**:
-{{ #if (equals providerName "Unknown Provider") }}
+{{#if (equals providerName "Unknown Provider") }}
 ```json
 {
   "tableName": "Book",
   "attributes": "- **Book_ID** (primary key): Unique identifier for the book.\n- **Title**: Title of the book.\n- **Author**: Author of the book.\n- **Publication_Year**: Year of publication for the book.\n- **Genre**: Literary genre of the book.\n- **ISBN**: ISBN code of the book.\n\n",
-  "recordSample:"| Book_ID| Title                     | Author                     | Publication_Year | Genre             | ISBN                |\n|---------|---------------------------|----------------------------|-------------------|-------------------|---------------------|\n| 1       | The Little Prince         | Antoine de Saint-Exupéry   | 1943              | Fiction           | 978-2-07-061275-8   |\n| 2       | 1984                      | George Orwell              | 1949              | Science Fiction   | 978-0-452-28423-4   |\n| 3       | The Great Gatsby          | F. Scott Fitzgerald        | 1925              | Fiction           | 978-0-7432-7356-5   |",
-  "definition":"This simplified model focuses on managing books in a library. It highlights the key information needed to catalog and search for books."
-  "relations": "| From Table | To Table | Relation     | Description                                                         |\n|------------|----------|--------------|---------------------------------------------------------------------|\n| Book       | Author   | Many-to-One  | Each book is written by one author, but an author can write multiple books. |\n| Book       | Genre    | Many-to-One  | Each book belongs to one genre, but a genre can have multiple books. |",
+  "recordSample": "| Book_ID| Title                     | Author                     | Publication_Year | Genre             | ISBN                |\n|---------|---------------------------|----------------------------|-------------------|-------------------|---------------------|\n| 1       | The Little Prince         | Antoine de Saint-Exupéry   | 1943              | Fiction           | 978-2-07-061275-8   |\n| 2       | 1984                      | George Orwell              | 1949              | Science Fiction   | 978-0-452-28423-4   |\n| 3       | The Great Gatsby          | F. Scott Fitzgerald        | 1925              | Fiction           | 978-0-7432-7356-5   |",
+  "definition":"This simplified model focuses on managing books in a library. It highlights the key information needed to catalog and search for books.",
+  "relations": "| From Table | To Table | Relation     | Description                                                         |\n|------------|----------|--------------|---------------------------------------------------------------------|\n| Book       | Author   | Many-to-One  | Each book is written by one author, but an author can write multiple books. |\n| Book       | Genre    | Many-to-One  | Each book belongs to one genre, but a genre can have multiple books. |"
 }       
 ```
 {{/if}}
-{{ #if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
+{{#if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
 ```json
 {
   "tableName": "`Book`",
   "attributes": "- **Book_ID** (primary key): Unique identifier for the book.\n- **Title**: Title of the book.\n- **Author**: Author of the book.\n- **Publication_Year**: Year of publication for the book.\n- **Genre**: Literary genre of the book.\n- **ISBN**: ISBN code of the book.\n\n",
-  "recordSample:"| `Book_ID`| `Title`                     | `Author`                     | `Publication_Year` | `Genre`             | `ISBN`                |\n|---------|---------------------------|----------------------------|-------------------|-------------------|---------------------|\n| 1       | The Little Prince         | Antoine de Saint-Exupéry   | 1943              | Fiction           | 978-2-07-061275-8   |\n| 2       | 1984                      | George Orwell              | 1949              | Science Fiction   | 978-0-452-28423-4   |\n| 3       | The Great Gatsby          | F. Scott Fitzgerald        | 1925              | Fiction           | 978-0-7432-7356-5   |",
-  "definition":"This simplified model focuses on managing books in a library. It highlights the key information needed to catalog and search for books."
-  "relations": "| From Table | To Table | Relation     | Description                                                         |\n|------------|----------|--------------|---------------------------------------------------------------------|\n| `Book`       | `Author`   | Many-to-One  | Each book is written by one author, but an author can write multiple books. |\n| `Book`       | `Genre`    | Many-to-One  | Each book belongs to one genre, but a genre can have multiple books. |",
+  "recordSample": "| `Book_ID`| `Title`                     | `Author`                     | `Publication_Year` | `Genre`             | `ISBN`                |\n|---------|---------------------------|----------------------------|-------------------|-------------------|---------------------|\n| 1       | The Little Prince         | Antoine de Saint-Exupéry   | 1943              | Fiction           | 978-2-07-061275-8   |\n| 2       | 1984                      | George Orwell              | 1949              | Science Fiction   | 978-0-452-28423-4   |\n| 3       | The Great Gatsby          | F. Scott Fitzgerald        | 1925              | Fiction           | 978-0-7432-7356-5   |",
+  "definition":"This simplified model focuses on managing books in a library. It highlights the key information needed to catalog and search for books.",
+  "relations": "| From Table | To Table | Relation     | Description                                                         |\n|------------|----------|--------------|---------------------------------------------------------------------|\n| `Book`       | `Author`   | Many-to-One  | Each book is written by one author, but an author can write multiple books. |\n| `Book`       | `Genre`    | Many-to-One  | Each book belongs to one genre, but a genre can have multiple books. |"
 }       
 ```
 {{/if}}
-{{ #if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
+{{#if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
 ```json
 {
   "tableName": "\"Book\"",
   "attributes": "- **Book_ID** (primary key): Unique identifier for the book.\n- **Title**: Title of the book.\n- **Author**: Author of the book.\n- **Publication_Year**: Year of publication for the book.\n- **Genre**: Literary genre of the book.\n- **ISBN**: ISBN code of the book.\n\n",
-  "recordSample:"| \"Book_ID\"| \"Title\"                     | \"Author\"                     | \"Publication_Year\" | \"Genre\"             | \"ISBN\"                |\n|---------|---------------------------|----------------------------|-------------------|-------------------|---------------------|\n| 1       | The Little Prince         | Antoine de Saint-Exupéry   | 1943              | Fiction           | 978-2-07-061275-8   |\n| 2       | 1984                      | George Orwell              | 1949              | Science Fiction   | 978-0-452-28423-4   |\n| 3       | The Great Gatsby          | F. Scott Fitzgerald        | 1925              | Fiction           | 978-0-7432-7356-5   |",
-  "definition":"This simplified model focuses on managing books in a library. It highlights the key information needed to catalog and search for books."
-  "relations": "| From Table | To Table | Relation     | Description                                                         |\n|------------|----------|--------------|---------------------------------------------------------------------|\n| "\Book\"       | \"Author\"   | Many-to-One  | Each book is written by one author, but an author can write multiple books. |\n| \"Book\"       | \"Genre\"    | Many-to-One  | Each book belongs to one genre, but a genre can have multiple books. |",
+  "recordSample": "| \"Book_ID\"| \"Title\"                     | \"Author\"                     | \"Publication_Year\" | \"Genre\"             | \"ISBN\"                |\n|---------|---------------------------|----------------------------|-------------------|-------------------|---------------------|\n| 1       | The Little Prince         | Antoine de Saint-Exupéry   | 1943              | Fiction           | 978-2-07-061275-8   |\n| 2       | 1984                      | George Orwell              | 1949              | Science Fiction   | 978-0-452-28423-4   |\n| 3       | The Great Gatsby          | F. Scott Fitzgerald        | 1925              | Fiction           | 978-0-7432-7356-5   |",
+  "definition":"This simplified model focuses on managing books in a library. It highlights the key information needed to catalog and search for books.",
+  "relations": "| From Table | To Table | Relation     | Description                                                         |\n|------------|----------|--------------|---------------------------------------------------------------------|\n| \"Book\"       | \"Author\"   | Many-to-One  | Each book is written by one author, but an author can write multiple books. |\n| \"Book\"       | \"Genre\"    | Many-to-One  | Each book belongs to one genre, but a genre can have multiple books. |"
 }       
 ```
 {{/if}}
-{{ #if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
+{{#if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
 ```json
 {
   "tableName": "[Book]",
   "attributes": "- **Book_ID** (primary key): Unique identifier for the book.\n- **Title**: Title of the book.\n- **Author**: Author of the book.\n- **Publication_Year**: Year of publication for the book.\n- **Genre**: Literary genre of the book.\n- **ISBN**: ISBN code of the book.\n\n",
-  "recordSample:"| [Book_ID]| [Title]                     | [Author]                     | [Publication_Year] | [Genre]             | [ISBN]                |\n|---------|---------------------------|----------------------------|-------------------|-------------------|---------------------|\n| 1       | The Little Prince         | Antoine de Saint-Exupéry   | 1943              | Fiction           | 978-2-07-061275-8   |\n| 2       | 1984                      | George Orwell              | 1949              | Science Fiction   | 978-0-452-28423-4   |\n| 3       | The Great Gatsby          | F. Scott Fitzgerald        | 1925              | Fiction           | 978-0-7432-7356-5   |",
-  "definition":"This simplified model focuses on managing books in a library. It highlights the key information needed to catalog and search for books."
-  "relations": "| From Table | To Table | Relation     | Description                                                         |\n|------------|----------|--------------|---------------------------------------------------------------------|\n| [Book]       | [Author]   | Many-to-One  | Each book is written by one author, but an author can write multiple books. |\n| [Book]       | [Genre]    | Many-to-One  | Each book belongs to one genre, but a genre can have multiple books. |",
+  "recordSample": "| [Book_ID]| [Title]                     | [Author]                     | [Publication_Year] | [Genre]             | [ISBN]                |\n|---------|---------------------------|----------------------------|-------------------|-------------------|---------------------|\n| 1       | The Little Prince         | Antoine de Saint-Exupéry   | 1943              | Fiction           | 978-2-07-061275-8   |\n| 2       | 1984                      | George Orwell              | 1949              | Science Fiction   | 978-0-452-28423-4   |\n| 3       | The Great Gatsby          | F. Scott Fitzgerald        | 1925              | Fiction           | 978-0-7432-7356-5   |",
+  "definition":"This simplified model focuses on managing books in a library. It highlights the key information needed to catalog and search for books.",
+  "relations": "| From Table | To Table | Relation     | Description                                                         |\n|------------|----------|--------------|---------------------------------------------------------------------|\n| [Book]       | [Author]   | Many-to-One  | Each book is written by one author, but an author can write multiple books. |\n| [Book]       | [Genre]    | Many-to-One  | Each book belongs to one genre, but a genre can have multiple books. |"
 }       
 ```
 {{/if}}

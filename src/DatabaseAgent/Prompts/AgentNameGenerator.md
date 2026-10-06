@@ -52,6 +52,6 @@ Agent Description: A playful chatbot designed to engage children in learning gra
 Now, forget the previous examples schema and focus on the task at hand. 
 
 **Input:**  
-Agent Description: {{$agentDescription}}
+Agent Description: {{agentDescription}}
 
 **Output:**

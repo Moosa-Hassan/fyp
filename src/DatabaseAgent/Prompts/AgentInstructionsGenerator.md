@@ -62,3 +62,12 @@ The agent is a virtual assistant focused on project management tasks for teams. 
 - Ensure that tool usage explanations are practical and specific, avoiding ambiguity.  
 - Highlight steps for maintaining accuracy and handling uncertainties clearly and systematically.  
 - Do not alter any provided information or descriptions inaccurately—preserve the integrity of given tasks and constraints.
+
+# Let's do it for real
+
+Now, forget the previous examples and focus on the task at hand.
+
+**Input:**  
+Agent Description: {{agentDescription}}
+
+**Output:**

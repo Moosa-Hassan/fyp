@@ -7,126 +7,36 @@ from dotenv import load_dotenv
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
 
-from .Internals.EmbeddedPromptProvider import EmbeddedPromptProvider
-from .Configuration.configuration import MemorySettings
-
+from .AgentContext import AgentContext
 from .AgentDefinationSnippit import AgentDefinitionSnippet
+from .Configuration.configuration import MemorySettings
+from .Internals.Embeddings import HashingEmbeddingService, IEmbeddingService, LocalEmbeddingService
+from .Internals.EmbeddedPromptProvider import EmbeddedPromptProvider
+from .Internals.VectorStore import SimpleVectorStore
 from .TableDefinationSnippet import TableDefinitionSnippet
 
-
 load_dotenv()
-
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 
 
 class AgentKernelFactory:
 
     @staticmethod
-    def _get_vector_store_record_definition(
-        vector_dimensions: int = 1536,
-    ):
-        return {
-            "TableName": {
-                "type": str,
-                "indexed": True,
-            },
-            "Key": {
-                "type": str,
-            },
-            "Definition": {
-                "type": str,
-            },
-            "Description": {
-                "type": str,
-                "full_text_indexed": True,
-            },
-            "TextEmbedding": {
-                "type": list[float],
-                "dimensions": vector_dimensions,
-            },
-        }
-
-    @staticmethod
-    def _get_agent_store_record_definition(
-        vector_dimensions: int = 1536,
-    ):
-        return {
-            "AgentName": {
-                "type": str,
-                "indexed": True,
-            },
-            "Key": {
-                "type": str,
-            },
-            "Description": {
-                "type": str,
-                "full_text_indexed": True,
-            },
-            "Instructions": {
-                "type": str,
-            },
-            "TextEmbedding": {
-                "type": list[float],
-                "dimensions": vector_dimensions,
-            },
-        }
-
-    @staticmethod
-    def configure_kernel(configuration, logger_factory=None):
-
-        kernel_settings = configuration["kernel"]
-        database_settings = configuration["database"]
-        memory_settings = configuration["memory"]
-
-        # -------------------------------------------------
-        # Create Kernel
-        # -------------------------------------------------
-
-        kernel = Kernel()
-
-        # -------------------------------------------------
-        # Azure OpenAI Chat Completion
-        # -------------------------------------------------
-
-        if not AZURE_OPENAI_API_KEY:
-            raise ValueError(
-                "AZURE_OPENAI_API_KEY is not set."
-            )
-
-        if not AZURE_OPENAI_ENDPOINT:
-            raise ValueError(
-                "AZURE_OPENAI_ENDPOINT is not set."
-            )
-
-        if not AZURE_OPENAI_DEPLOYMENT:
-            raise ValueError(
-                "AZURE_OPENAI_DEPLOYMENT is not set."
-            )
-
-        chat_completion = AzureChatCompletion(
-            deployment_name=AZURE_OPENAI_DEPLOYMENT,
-            api_key=AZURE_OPENAI_API_KEY,
-            endpoint=AZURE_OPENAI_ENDPOINT,
-            service_id="agent",
-        )
-
-        kernel.add_service(chat_completion)
-
-        # -------------------------------------------------
-        # Database Connection
-        # -------------------------------------------------
-
-        db_path = Path(__file__).parent / "northwind.db"
-
-        db_connection = sqlite3.connect(
-            db_path
-        )
-
-        # -------------------------------------------------
-        # Logger
-        # -------------------------------------------------
+    def configure_kernel(
+        configuration: dict | None = None,
+        logger_factory=None,
+        chat_service=None,
+        embedding_service: IEmbeddingService | None = None,
+    ) -> AgentContext:
+        """
+        configuration (all optional):
+            {"database": {"ConnectionString": "path/to/file.db"},
+             "memory":   {"Kind": "Volatile" | "SQLite", "ConnectionString": "memory.db",
+                          "PrefixCollectionName": "", "Dimensions": 256}}   # Dimensions only applies to the placeholder
+        chat_service / embedding_service can be injected (tests, or once you have an embedding model).
+        """
+        cfg = configuration or {}
+        database_settings = cfg.get("database", {})
+        memory_settings = {"Kind": MemorySettings.StorageType.Volatile.value, **cfg.get("memory", {})}
 
         logger = (
             logger_factory.getLogger("AgentKernelFactory")
@@ -134,115 +44,64 @@ class AgentKernelFactory:
             else logging.getLogger("AgentKernelFactory")
         )
 
-        logger.info(
-            "Using database %s",
-            db_path,
-        )
+        # ---- Kernel + chat service -------------------------------------------------
+        kernel = Kernel()
 
-        # -------------------------------------------------
-        # Memory Configuration
-        # -------------------------------------------------
-
-        logger.info(
-            "Using memory kind %s",
-            memory_settings["Kind"],
-        )
-
-        prefix = memory_settings.get(
-            "PrefixCollectionName",
-            "",
-        )
-
-        if prefix:
-            prefix += "-"
-
-        memory_kind = memory_settings["Kind"]
-
-        # -------------------------------------------------
-        # Vector Store Definitions
-        # -------------------------------------------------
-
-        if memory_kind == MemorySettings.StorageType.Volatile.value:
-
-            agent_collection = {
-                "name": f"{prefix}agent",
-                "definition":
-                    AgentKernelFactory
-                    ._get_agent_store_record_definition(),
-            }
-
-            table_collection = {
-                "name": f"{prefix}tables",
-                "definition":
-                    AgentKernelFactory
-                    ._get_vector_store_record_definition(),
-            }
-
-        elif memory_kind == MemorySettings.StorageType.SQLite.value:
-
-            agent_collection = {
-                "name": f"{prefix}agent",
-                "connection_string":
-                    memory_settings["ConnectionString"],
-                "definition":
-                    AgentKernelFactory
-                    ._get_agent_store_record_definition(
-                        memory_settings["Dimensions"]
-                    ),
-            }
-
-            table_collection = {
-                "name": f"{prefix}tables",
-                "connection_string":
-                    memory_settings["ConnectionString"],
-                "definition":
-                    AgentKernelFactory
-                    ._get_vector_store_record_definition(
-                        memory_settings["Dimensions"]
-                    ),
-            }
-
-        elif memory_kind == MemorySettings.StorageType.Qdrant.value:
-
-            agent_collection = {
-                "name": f"{prefix}agent",
-                "host": memory_settings["Host"],
-                "port": memory_settings["Port"],
-                "https": memory_settings["Https"],
-                "api_key": memory_settings["APIKey"],
-                "definition":
-                    AgentKernelFactory
-                    ._get_agent_store_record_definition(
-                        memory_settings["Dimensions"]
-                    ),
-            }
-
-            table_collection = {
-                "name": f"{prefix}tables",
-                "host": memory_settings["Host"],
-                "port": memory_settings["Port"],
-                "https": memory_settings["Https"],
-                "api_key": memory_settings["APIKey"],
-                "definition":
-                    AgentKernelFactory
-                    ._get_vector_store_record_definition(
-                        memory_settings["Dimensions"]
-                    ),
-            }
-
-        else:
-            raise ValueError(
-                f"Unknown storage type '{memory_kind}'"
+        if chat_service is None:
+            api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            for var, val in (
+                ("AZURE_OPENAI_API_KEY", api_key),
+                ("AZURE_OPENAI_ENDPOINT", endpoint),
+                ("AZURE_OPENAI_DEPLOYMENT", deployment),
+            ):
+                if not val:
+                    raise ValueError(f"{var} is not set.")
+            chat_service = AzureChatCompletion(
+                deployment_name=deployment, api_key=api_key, endpoint=endpoint, service_id="agent"
             )
+        kernel.add_service(chat_service)
 
-        # -------------------------------------------------
-        # Prompt Provider
-        # -------------------------------------------------
+        # ---- Database (read-only) --------------------------------------------------
+        db_path = Path(database_settings.get("ConnectionString") or Path(__file__).parent / "northwind.db")
+        if not db_path.exists():
+            raise FileNotFoundError(f"Database file not found: {db_path}")
+        connection = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True, check_same_thread=False)
+        logger.info("Using database %s", db_path)
 
-        prompt_provider = EmbeddedPromptProvider()
+        # ---- Embeddings (placeholder until a real model exists) ---------------------
+        # Priority: injected service > EMBEDDING_MODEL env var (local sentence-transformers) > placeholder.
+        if embedding_service is None:
+            model_name = os.getenv("EMBEDDING_MODEL")
+            if model_name:
+                embedding_service = LocalEmbeddingService(model_name)
+            else:
+                embedding_service = HashingEmbeddingService(dimensions=int(memory_settings.get("Dimensions", 256)))
+        embedding = embedding_service
 
-        # -------------------------------------------------
-        # Return Kernel
-        # -------------------------------------------------
+        # ---- Vector stores ---------------------------------------------------------
+        kind = memory_settings["Kind"]
+        logger.info("Using memory kind %s", kind)
+        prefix = memory_settings.get("PrefixCollectionName", "")
+        prefix = f"{prefix}-" if prefix else ""
 
-        return kernel
+        if kind == MemorySettings.StorageType.Volatile.value:
+            path = None
+        elif kind == MemorySettings.StorageType.SQLite.value:
+            path = memory_settings["ConnectionString"]
+        else:
+            raise NotImplementedError(f"Memory kind '{kind}' is not implemented (use Volatile or SQLite).")
+
+        table_store = SimpleVectorStore(f"{prefix}tables", TableDefinitionSnippet, path)
+        agent_store = SimpleVectorStore(f"{prefix}agent", AgentDefinitionSnippet, path)
+
+        return AgentContext(
+            kernel=kernel,
+            connection=connection,
+            prompt_provider=EmbeddedPromptProvider(),
+            embedding=embedding,
+            table_store=table_store,
+            agent_store=agent_store,
+            logger=logger,
+        )

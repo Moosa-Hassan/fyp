@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from pydantic import ValidationError
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings
 from semantic_kernel.contents import AuthorRole, ChatHistory, ChatMessageContent
-from semantic_kernel.functions import KernelArguments, KernelFunctionFromPrompt
-from semantic_kernel.prompt_template import PromptTemplateConfig
 
 from .AgentResponse import AgentResponse
 from .DatabasePlugin import DatabasePlugin
+from .Internals.PromptRunner import parse_json_model, run_prompt
 from .IPromptProvider import AgentPromptConstants, IPromptProvider
 from .RewriteQueryResponse import RewriteQueryResponse
 
@@ -39,13 +39,6 @@ _Query Result_:
 | France        | Paris       |
 | Germany       | Berlin      |
 | Spain         | Madrid      |
-| Italy         | Rome        |
-| Portugal      | Lisbon      |
-| Netherlands   | Amsterdam   |
-| Belgium       | Brussels    |
-| Switzerland   | Bern        |
-| Austria       | Vienna      |
-
 
 _Output_:  
 ```json
@@ -63,10 +56,6 @@ _Query Result_:
 |----------------|------------|
 | New York City  | 8,419,600  |
 | Los Angeles    | 3,979,576  |
-| Chicago        | 2,693,976  |
-| Houston        | 2,303,482  |
-| Phoenix        | 1,563,025  |
-
 
 _Output_:  
 ```json
@@ -96,42 +85,34 @@ class DatabaseKernelAgent:
         self.instructions = instructions
         self.instructions_role = instructions_role
         self._prompt_provider = prompt_provider
-        self._plugin = plugin  # built once, not per call
+        self._plugin = plugin
+        # OpenAI only accepts [a-zA-Z0-9_-] in message names; LLM-generated agent names may not comply
+        self._message_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name or "DatabaseAgent")
 
-    # ------------------------------------------------------------------ #
     def get_name(self) -> str:
         return self.name or "DatabaseAgent"
 
     def get_display_name(self) -> str:
         return self.name.strip() if self.name and self.name.strip() else "UnnamedAgent"
 
-    # ------------------------------------------------------------------ #
     async def invoke(
         self,
         user_query: str,
         chat_history: ChatHistory | None = None,
         settings: OpenAIChatPromptExecutionSettings | None = None,
     ) -> str | None:
-        """
-        `chat_history` is the persistent conversation ("thread"). Only the user
-        message and the final answer are added to it; the DB-result messages live
-        in a working copy, as in the C#.
-        """
+        """chat_history is the persistent thread: only the user message and the final answer
+        are added to it. DB-result messages live in a working copy."""
         if chat_history is None:
             chat_history = ChatHistory()
 
-        chat_history.add_message(
-            ChatMessageContent(role=AuthorRole.USER, content=user_query)
-        )
+        chat_history.add_message(ChatMessageContent(role=AuthorRole.USER, content=user_query))
 
-        # Working copy (C#: new ChatHistory built from the thread)
         history = ChatHistory()
         for m in chat_history.messages:
             history.add_message(m)
 
-        last_user = next(
-            m.content for m in reversed(history.messages) if m.role == AuthorRole.USER
-        )
+        last_user = next(m.content for m in reversed(history.messages) if m.role == AuthorRole.USER)
 
         rewritten = await self.rewrite_query(last_user)
         logger.debug("Rewritten query: %s", rewritten)
@@ -142,7 +123,6 @@ class DatabaseKernelAgent:
             original_query=last_user,
         )
 
-        # C#: history.Insert(0, ...) and history.Insert(1, ...)
         history.messages.insert(0, self._system("Here are the results from the database:"))
         history.messages.insert(1, self._system(data))
 
@@ -150,38 +130,24 @@ class DatabaseKernelAgent:
 
         if answer is not None:
             chat_history.add_message(
-                ChatMessageContent(role=AuthorRole.ASSISTANT, content=answer, name=self.name)
+                ChatMessageContent(role=AuthorRole.ASSISTANT, content=answer, name=self._message_name)
             )
         return answer
 
-    # ------------------------------------------------------------------ #
     async def rewrite_query(self, query: str) -> str:
         template = self._prompt_provider.read_prompt(AgentPromptConstants.REWRITE_USER_QUERY)
+        response = await run_prompt(self.kernel, template, RewriteQueryResponse, query=query)
+        return response.query or query  # fall back to the original question
 
-        fn = KernelFunctionFromPrompt(
-            function_name="rewrite_user_query",  # C# reused ExtractTableName here (bug)
-            prompt_template_config=PromptTemplateConfig(
-                template=template,
-                template_format="handlebars",
-                execution_settings=OpenAIChatPromptExecutionSettings(
-                    response_format=RewriteQueryResponse
-                ),
-            ),
-        )
-        result = await fn.invoke(self.kernel, KernelArguments(query=query))
-        return RewriteQueryResponse.model_validate_json(str(result)).query
-
-    # ------------------------------------------------------------------ #
     def _system(self, content: str) -> ChatMessageContent:
-        return ChatMessageContent(role=AuthorRole.SYSTEM, content=content, name=self.name)
+        return ChatMessageContent(role=AuthorRole.SYSTEM, content=content, name=self._message_name)
 
     def _setup_chat_history(self, history: ChatHistory) -> ChatHistory:
-        """SetupAgentChatHistoryAsync"""
         chat = ChatHistory()
         if self.instructions and self.instructions.strip():
             chat.add_message(
                 ChatMessageContent(
-                    role=self.instructions_role, content=self.instructions, name=self.name
+                    role=self.instructions_role, content=self.instructions, name=self._message_name
                 )
             )
         chat.add_message(self._system(OUTPUT_FORMAT_PROMPT))
@@ -196,26 +162,20 @@ class DatabaseKernelAgent:
     ) -> str | None:
         chat = self._setup_chat_history(history)
 
-        # C# default when no settings are supplied: ResponseFormat = "json_object"
-        settings = settings or OpenAIChatPromptExecutionSettings(
-            response_format={"type": "json_object"}
-        )
+        settings = settings or OpenAIChatPromptExecutionSettings(response_format={"type": "json_object"})
 
         chat_service = self.kernel.get_service(type=ChatCompletionClientBase)
         result = await chat_service.get_chat_message_content(chat, settings, kernel=self.kernel)
         content = str(result.content if result is not None else "")
 
         try:
-            response = AgentResponse.model_validate_json(content)
+            response = parse_json_model(AgentResponse, content)
         except (ValidationError, ValueError) as ex:
-            # C#: catch JsonException -> log, return the raw message unchanged
-            logger.warning("Failed to deserialize agent response to AgentResponse. "
-                           "Content: %s (%s)", content, ex)
-            return content
+            logger.warning("Failed to parse agent response. Content: %s (%s)", content, ex)
+            return content  # return the raw message unchanged
 
         if not response.answer:
-            # C#: warn and `continue` (yields nothing)
-            logger.warning("Failed to deserialize agent response content. Content: %s", content)
+            logger.warning("Agent response had no answer. Content: %s", content)
             return None
 
         return response.answer

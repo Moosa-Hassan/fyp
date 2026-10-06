@@ -1,6 +1,6 @@
-﻿You are an expert SQL query generator for {{providerName}}.
+You are an expert SQL query generator for {{providerName}}.
 
-{{ #if previousAttempt }}
+{{#if previousAttempt }}
 Your task is to fix a SQL query based on the provided database schema and the specific requirements of {{providerName}}.
 
 ### Constraints
@@ -36,7 +36,7 @@ The 'Customers' table is designed to hold essential details about each customer 
 - **LastName**: The customer's last name, which can be used for personalized communication.
 - **Email**: The customer's email address for contact purposes.
 
-{{ #if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
+{{#if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
@@ -61,8 +61,8 @@ Generated:
   "query": "SELECT * FROM `Customers` WHERE `LastName` LIKE 'S%';"
 }
 ```
-{{ /if }}
-{{ #if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
+{{/if}}
+{{#if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
@@ -87,8 +87,8 @@ Generated:
   "query": "SELECT * FROM [Customers] WHERE [LastName] LIKE 'S%';"
 }
 ```
-{{ /if }}
-{{ #if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
+{{/if}}
+{{#if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
@@ -110,10 +110,10 @@ Generated:
     "The wildcard 'S%' is used to match last names starting with 'S'.",
     "Query is compatible with {{ providerName }} syntax."
   ],
-  "query": "SELECT * FROM "Customers" WHERE "LastName" LIKE 'S%';"
+  "query": "SELECT * FROM \"Customers\" WHERE \"LastName\" LIKE 'S%';"
 }
 ```
-{{ /if }}
+{{/if}}
 {{else}}
 Your task is to create a valid SQL query based on a natural language prompt, considering the provided database schema and the specific requirements of {{providerName}}.
 You should never guess or make assumptions about the database structure beyond what is provided in the `Tables and Columns` section.
@@ -164,7 +164,7 @@ The 'Customers' table is designed to hold essential details about each customer 
 - **LastName**: The customer's last name, which can be used for personalized communication.
 - **Email**: The customer's email address for contact purposes.
  
-{{ #if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
+{{#if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
@@ -178,11 +178,11 @@ The 'Customers' table is designed to hold essential details about each customer 
     "The wildcard 'S%' is used to match last names starting with 'S'.",
     "Query is compatible with {{providerName}} syntax."
   ],
-  "query": "SELECT * FROM `Customers` WHERE `last_name` LIKE 'S%';"
+  "query": "SELECT * FROM `Customers` WHERE `LastName` LIKE 'S%';"
 }
 ```
-{{ /if }}
-{{ #if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
+{{/if}}
+{{#if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
@@ -196,11 +196,11 @@ The 'Customers' table is designed to hold essential details about each customer 
     "The wildcard 'S%' is used to match last names starting with 'S'.",
     "Query is compatible with {{providerName}} syntax."
   ],
-  "query": "SELECT * FROM [Customers] WHERE [last_name] LIKE 'S%';"
+  "query": "SELECT * FROM [Customers] WHERE [LastName] LIKE 'S%';"
 }
 ```
-{{ /if }}
-{{ #if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
+{{/if}}
+{{#if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
@@ -214,10 +214,10 @@ The 'Customers' table is designed to hold essential details about each customer 
     "The wildcard 'S%' is used to match last names starting with 'S'.",
     "Query is compatible with {{providerName}} syntax."
   ],
-  "query": "SELECT * FROM "Customers" WHERE "last_name" LIKE 'S%';"
+  "query": "SELECT * FROM \"Customers\" WHERE \"LastName\" LIKE 'S%';"
 }
 ```
-{{ /if }}
+{{/if}}
 
 ## Example 2
 **Natural Language Query**: "Get the total sales by product category."  
@@ -230,24 +230,24 @@ The 'Products' table is structured to capture comprehensive details about each p
 - **Category**: The classification or type of product (e.g., electronics, clothing).
 - **Price**: The retail price of the product.
 
-{{ #if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
+{{#if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
 | `Products`   | `Sales`     | One-to-Many  | Each product can have multiple sales linked to it.                |
-{{ /if }}
-{{ #if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
+{{/if}}
+{{#if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
 | [Products]   | [Sales]     | One-to-Many  | Each product can have multiple sales linked to it.                |
-{{ /if }}
-{{ #if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
+{{/if}}
+{{#if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
 | "Products"   | "Sales"     | One-to-Many  | Each product can have multiple sales linked to it.                |
-{{ /if }}
+{{/if}}
 
 ---
 
@@ -259,28 +259,28 @@ The 'Sales' table is organized to maintain records of individual sales transacti
 - **ProductID**: Identifier for the product sold, likely a foreign key referencing the Products table.
 - **Quantity**: The number of units sold in the transaction.
 
-{{ #if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
+{{#if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
 | `Sales`      | `Products`  | Many-to-One  | Each sale corresponds to a specific product.                     |
-{{ /if }}
-{{ #if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
+{{/if}}
+{{#if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
 | [Sales]      | [Products]  | Many-to-One  | Each sale corresponds to a specific product.                     |
-{{ /if }}
-{{ #if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
+{{/if}}
+{{#if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
 #### Relations
 | From Table   | To Table    | Relation     | Description                                                       |
 |--------------|-------------|--------------|-------------------------------------------------------------------|
 | "Sales"      | "Products"  | Many-to-One  | Each sale corresponds to a specific product.                     |
-{{ /if }}
+{{/if}}
 
 ---
 **Generated**:
-{{ #if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
+{{#if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
 ```json
 {  
     "comments": [
@@ -290,8 +290,8 @@ The 'Sales' table is organized to maintain records of individual sales transacti
   "query": "SELECT `p`.`category`, SUM(`s`.`quantity` * `p`.`price`) AS `total_sales` FROM `Products` `p` INNER JOIN `Sales` `s` ON `p`.`product_id` = `s`.`product_id` GROUP BY `p`.`category`;"
 }
 ```
-{{ /if }}
-{{ #if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
+{{/if}}
+{{#if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
 ```json
 {  
     "comments": [
@@ -301,8 +301,8 @@ The 'Sales' table is organized to maintain records of individual sales transacti
   "query": "SELECT [p].[category], SUM([s].[quantity] * [p].[price]) AS [total_sales] FROM [Products] p INNER JOIN [Sales] [s] ON [p].[product_id] = [s].[product_id] GROUP BY [p].[category];"
 }
 ```
-{{ /if }}
-{{ #if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
+{{/if}}
+{{#if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
 ```json
 {  
     "comments": [
@@ -312,7 +312,7 @@ The 'Sales' table is organized to maintain records of individual sales transacti
   "query": "SELECT \"p\".\"category\", SUM(\"s\".\"quantity\" * \"p\".\"price\") AS \"total_sales\" FROM \"Products\" \"p\" INNER JOIN \"Sales\" \"s\" ON \"p\".\"product_id\" = \"s\".\"product_id\" GROUP BY \"p\".\"category\";"
 }
 ```
-{{ /if }}
+{{/if}}
 
 ## Example 3
 **Natural Language Query**: "List all employees who joined after January 1, 2020.""
@@ -326,7 +326,7 @@ The 'Employees' table is structured to store vital information about employees w
 - **last name**: The employee's last name, important for formal communication.
 - **join date**: The date the employee joined the organization, which can be used to track tenure and employee progress.
 
-{{ #if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
+{{#if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
 #### Relations
 | From Table   | To Table      | Relation     | Description                                                             |
 |--------------|---------------|--------------|-------------------------------------------------------------------------|
@@ -344,8 +344,8 @@ Generated:
   "query": "SELECT `employee_id`, `first name`, `last name` FROM `Employees` WHERE `join date` > '2020-01-01';"
 }
 ```
-{{ /if }}
-{{ #if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
+{{/if}}
+{{#if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
 #### Relations
 | From Table   | To Table      | Relation     | Description                                                             |
 |--------------|---------------|--------------|-------------------------------------------------------------------------|
@@ -363,8 +363,8 @@ Generated:
   "query": "SELECT [employee_id], [first name], [last name] FROM [Employees] WHERE [join date] > '2020-01-01';"
 }
 ```
-{{ /if }}
-{{ #if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
+{{/if}}
+{{#if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
 #### Relations
 | From Table   | To Table      | Relation     | Description                                                             |
 |--------------|---------------|--------------|-------------------------------------------------------------------------|
@@ -406,7 +406,7 @@ Your goal is to generate a valid SQL query based on the provided natural languag
 
 **Natural Language Query:** "{{prompt}}"
 
-{{ #if previousAttempt }}
+{{#if previousAttempt }}
 #### Previous Attempt
 
 You previously attempted to generate a SQL query for the following prompt, but it encountered an error. 

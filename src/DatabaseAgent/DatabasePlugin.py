@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from typing import Annotated, Any, AsyncIterator, Awaitable, Callable, Protocol
 
-import pandas as pd
 from rank_bm25 import BM25Okapi
 from semantic_kernel import Kernel
-from semantic_kernel.connectors.ai.embedding_generator_base import EmbeddingGeneratorBase
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings
 from semantic_kernel.functions import (
     KernelArguments,
@@ -18,16 +16,17 @@ from semantic_kernel.functions import (
 from semantic_kernel.prompt_template import PromptTemplateConfig
 
 from .DatabasePluginOptions import DatabasePluginOptions
-from .IPromptProvider import IPromptProvider
-from .TableDefinationSnippet import TableDefinitionSnippet
+from .Extensions.DBConnectionExtension import DBConnectionExtension
+from .Internals.Embeddings import IEmbeddingService
+from .Internals.MarkdownRenderer import MarkdownRenderer
+from .Internals.PromptRunner import parse_json_model
+from .Internals.QueryExecutor import QueryExecutor
+from .Internals.RetryHelper import RetryHelper
+from .Internals.VectorStore import VectorSearchResult
+from .IPromptProvider import AgentPromptConstants, IPromptProvider
 from .WriteSQLQueryResponse import WriteSQLQueryResponse
 
-WRITE_SQL_QUERY_PROMPT = "WriteSQLQuery"  # AgentPromptConstants.WriteSQLQuery
 
-
-# --------------------------------------------------------------------------- #
-# Small supporting types (C# had these in other namespaces/files)
-# --------------------------------------------------------------------------- #
 @dataclass
 class QueryExecutionContext:
     kernel: Kernel
@@ -44,53 +43,24 @@ class IQueryExecutionFilter(Protocol):
     ) -> tuple[bool, str]: ...
 
 
-@dataclass
-class VectorSearchResult:
-    record: TableDefinitionSnippet
-    score: float | None = None
-
-
 class IVectorSearchable(Protocol):
     def search(self, embedding: Any, top: int) -> AsyncIterator[VectorSearchResult]: ...
 
 
-async def retry_try(
-    func: Callable[[Exception | None], Awaitable[Any]],
-    count: int,
-    log: logging.Logger,
-) -> Any:
-    """Equivalent of RetryHelper.Try: retries, feeding the last exception back in."""
-    last_exc: Exception | None = None
-    for attempt in range(1, count + 1):
-        try:
-            return await func(last_exc)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:  # noqa: BLE001
-            last_exc = e
-            log.warning("Attempt %d/%d failed: %s", attempt, count, e)
-    assert last_exc is not None
-    raise last_exc
+_FORBIDDEN = re.compile(r"\b(insert|update|delete|drop|alter|create|attach|detach|pragma|truncate|grant)\b")
 
 
-def get_provider_name(connection: Any) -> str:
-    """Rough equivalent of DbConnection.GetProviderName()."""
-    return type(connection).__module__.split(".")[0]  # e.g. 'sqlite3', 'psycopg2', 'pyodbc'
+class ReadOnlyQueryFilter:
+    """Default filter: single read-only statement (SELECT / WITH ... SELECT)."""
+
+    async def on_query_execution(self, context, next_):
+        sql = re.sub(r"--.*?$|/\*.*?\*/", "", context.sql_query, flags=re.S | re.M).strip().lower()
+        body = sql.rstrip(";").strip()
+        if not re.match(r"^\(*\s*(select|with)\b", body) or ";" in body or _FORBIDDEN.search(body):
+            return True, "Only a single read-only SELECT statement is allowed."
+        return await next_(context)
 
 
-async def execute_sql(connection: Any, sql: str) -> pd.DataFrame:
-    """Equivalent of QueryExecutor.ExecuteSQLAsync (DB-API / SQLAlchemy connection)."""
-    return await asyncio.to_thread(pd.read_sql_query, sql, connection)
-
-
-def render_markdown(df: pd.DataFrame) -> str:
-    """Equivalent of MarkdownRenderer.Render."""
-    return df.to_markdown(index=False)
-
-
-# --------------------------------------------------------------------------- #
-# The plugin
-# --------------------------------------------------------------------------- #
 class DatabasePlugin:
     def __init__(
         self,
@@ -98,6 +68,8 @@ class DatabasePlugin:
         options: DatabasePluginOptions,
         vector_store: IVectorSearchable,
         connection: Any,
+        embedding_service: IEmbeddingService,
+        filters: list[IQueryExecutionFilter] | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         if options is None:
@@ -107,21 +79,25 @@ class DatabasePlugin:
         self._log = logger or logging.getLogger(__name__)
         self._vector_store = vector_store
         self._connection = connection
+        self._embedding = embedding_service
+        self._filters = filters if filters is not None else [ReadOnlyQueryFilter()]
+        self._provider_name = DBConnectionExtension.get_provider_name(connection)
 
         execution_settings = OpenAIChatPromptExecutionSettings(
             max_tokens=options.max_tokens,
             temperature=options.temperature,
             top_p=options.top_p,
             seed=0,
-            response_format=WriteSQLQueryResponse,  
+            response_format=WriteSQLQueryResponse,
         )
 
         self._write_sql_function = KernelFunctionFromPrompt(
             function_name="write_sql_query",
             plugin_name="DatabasePlugin",
             prompt_template_config=PromptTemplateConfig(
-                template=prompt_provider.read_prompt(WRITE_SQL_QUERY_PROMPT),
+                template=prompt_provider.read_prompt(AgentPromptConstants.WRITE_SQL_QUERY),
                 template_format="handlebars",
+                allow_dangerously_set_content=True,  # keep quotes in schema/SQL unescaped
                 execution_settings=execution_settings,
             ),
         )
@@ -141,21 +117,19 @@ class DatabasePlugin:
         original_query: Annotated[str, "The original query, used for debugging purposes."],
     ) -> Annotated[str, "A Markdown representation of the query result."]:
         try:
-            embedding_service = kernel.get_service(type=EmbeddingGeneratorBase)
-            embeddings = (await embedding_service.generate_embeddings([prompt]))[0]
+            embedding = await self._embedding.generate(prompt)
 
             top = min(self._options.top_k * 5, 100)
-            related = [r async for r in self._vector_store.search(embeddings, top=top)]
-            ranked = self._bm25_rank(prompt, related, lambda r: r.record.description,
-                                     top_n=self._options.top_k)
-
-            table_definitions = "".join(
-                f"{r.record.description}\n\n---\n\n" for r in ranked
+            related = [r async for r in self._vector_store.search(embedding, top=top)]
+            ranked = self._bm25_rank(
+                prompt, related, lambda r: r.record.description or "", top_n=self._options.top_k
             )
+
+            table_definitions = "".join(f"{r.record.description}\n\n---\n\n" for r in ranked)
 
             sql_query = ""
 
-            async def attempt(prev_exc: Exception | None) -> pd.DataFrame:
+            async def attempt(prev_exc: Exception | None):
                 nonlocal sql_query
 
                 sql_query = await self._get_sql_query_string_async(
@@ -167,27 +141,20 @@ class DatabasePlugin:
                 )
 
                 if not sql_query or not sql_query.strip():
-                    self._log.warning("SQL query is empty for prompt: %s", prompt)
                     raise RuntimeError("The kernel was unable to generate the expected query.")
 
                 self._log.info("SQL query generated: %s", sql_query)
 
                 ctx = QueryExecutionContext(kernel, original_query, table_definitions, sql_query)
-                filters = self._get_filters(kernel)
-
-                filtered, message = await self._invoke_filters_or_query(
-                    filters,
-                    _allow_query,
-                    ctx,
-                )
+                filtered, message = await self._invoke_filters_or_query(self._filters, _allow_query, ctx)
                 if filtered:
                     raise RuntimeError(f"Query execution was filtered: {message}")
 
-                return await execute_sql(self._connection, sql_query)
+                return await QueryExecutor.execute_sql_async(self._connection, sql_query, self._log)
 
-            data_table = await retry_try(attempt, count=3, log=self._log)
+            data_table = await RetryHelper.try_function(attempt, count=3, logger=self._log)
 
-            result = render_markdown(data_table)
+            result = MarkdownRenderer.render(data_table)
             self._log.info("Query result: %s", result)
             return result
 
@@ -195,7 +162,6 @@ class DatabasePlugin:
             self._log.exception("Error executing query: %s", prompt)
             raise
 
-    # ------------------------------------------------------------------ #
     async def _get_sql_query_string_async(
         self,
         kernel: Kernel,
@@ -207,23 +173,12 @@ class DatabasePlugin:
         arguments = KernelArguments(
             prompt=prompt,
             tablesDefinition=tables_definitions,
-            previousAttempt=previous_sql_query,
-            previousException=str(previous_sql_exception) if previous_sql_exception else None,
-            providerName=get_provider_name(self._connection),
+            previousAttempt=previous_sql_query or "",
+            previousException=str(previous_sql_exception) if previous_sql_exception else "",
+            providerName=self._provider_name,
         )
-
-        self._log.info("Write SQL query for: %s", prompt)
-
         function_result = await self._write_sql_function.invoke(kernel, arguments)
-        raw = str(function_result)
-        return WriteSQLQueryResponse.model_validate_json(raw).query
-
-    # ------------------------------------------------------------------ #
-    @staticmethod
-    def _get_filters(kernel: Kernel) -> list[IQueryExecutionFilter]:
-        """Equivalent of kernel.GetAllServices<IQueryExecutionFilter>().
-        Python SK has no generic 'get all services by type', so we scan them."""
-        return [s for s in kernel.services.values() if hasattr(s, "on_query_execution")]
+        return parse_json_model(WriteSQLQueryResponse, str(function_result)).query
 
     @classmethod
     async def _invoke_filters_or_query(
@@ -240,19 +195,16 @@ class DatabasePlugin:
             )
         return await callback(context)
 
-    # ------------------------------------------------------------------ #
     @staticmethod
     def _bm25_rank(query: str, items: list, text_of: Callable[[Any], str], top_n: int) -> list:
-        """Equivalent of BM25Reranker.RankAsync (English tokenisation only)."""
         if not items:
             return []
-        corpus = [text_of(i).lower().split() for i in items]
+        corpus = [re.findall(r"\w+", text_of(i).lower()) or [""] for i in items]
         bm25 = BM25Okapi(corpus)
-        scores = bm25.get_scores(query.lower().split())
+        scores = bm25.get_scores(re.findall(r"\w+", query.lower()))
         order = sorted(range(len(items)), key=lambda i: scores[i], reverse=True)
         return [items[i] for i in order[:top_n]]
 
 
 async def _allow_query(_context: QueryExecutionContext) -> tuple[bool, str]:
-    _ = _context
-    return False, ""
+    return False, ""  # (filtered, message): nothing filtered

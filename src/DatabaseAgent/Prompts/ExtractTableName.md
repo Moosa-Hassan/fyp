@@ -1,4 +1,4 @@
-﻿You are an expert in {{providerName}} query formatting. Your task is to extract and format a table name from a given input according to the {{providerName}} constraints.
+You are an expert in {{providerName}} query formatting. Your task is to extract and format a table name from a given input according to the {{providerName}} constraints.
 
 Extract the table name from a given input, ensuring it is properly formatted for use in SQL queries as per the guidelines below:
 
@@ -33,7 +33,7 @@ Return a JSON object formatted as:
 
 # Examples
 
-{{ #if (equals providerName "Unknown Provider") }}
+{{#if (equals providerName "Unknown Provider") }}
 **Input**: 
 ```
 | name |
@@ -76,7 +76,7 @@ Return a JSON object formatted as:
 }
 ```
 {{/if}}
-{{ #if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
+{{#if (or (or (equals providerName "SQL Server") (equals providerName "SQLite")) (equals providerName "OLE DB")) }}
 **Input**: 
 ```
 | name |
@@ -119,7 +119,7 @@ Return a JSON object formatted as:
 }
 ```
 {{/if}}
-{{ #if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
+{{#if (or (equals providerName "PostgreSQL") (equals providerName "Oracle")) }}
 **Input**: 
 ```
 | name |
@@ -162,7 +162,7 @@ Return a JSON object formatted as:
 }
 ```
 {{/if}}
-{{ #if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
+{{#if (or (equals providerName "MySQL") (equals providerName "Simba Spark ODBC Driver")) }}
 **Input**: 
 ```
 | name |

@@ -22,7 +22,7 @@ Tables managed:
 **Output**:
 ```json
 {
-  "description": ""Manage customer orders, products, and profiles to facilitate the online sales process.\n### Relationships\nEach order is linked to a corresponding customer and one or more products.\n### Examples of actions supported\nSearch for orders, update product inventory, retrieve and manage customer details.",
+  "description": "Manage customer orders, products, and profiles to facilitate the online sales process.\n### Relationships\nEach order is linked to a corresponding customer and one or more products.\n### Examples of actions supported\nSearch for orders, update product inventory, retrieve and manage customer details."
 }
 ```
 [END OF EXAMPLE]
@@ -38,8 +38,8 @@ Tables managed:
 Now, forget the previous examples schema and focus on the task at hand. 
 
 **Input:**  
-Expected agent's name: {{$expectedName}}
+Expected agent's name: {{expectedName}}
 Tables managed:
-{{$tableDefinitions}}
+{{tableDefinitions}}
 
 **Output:**

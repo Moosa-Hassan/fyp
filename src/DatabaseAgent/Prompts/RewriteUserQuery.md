@@ -1,4 +1,4 @@
-﻿Reformulate user queries for database searches to enhance clarity and specificity.
+Reformulate user queries for database searches to enhance clarity and specificity.
 
 When provided with a question or search request, restructure it by removing ambiguities, adding relevant details, and improving phrasing for accuracy and context. Focus on the intended query purpose while retaining all key information.
 
@@ -44,4 +44,4 @@ Return a JSON object formatted as:
 
 Now, forget the previous examples schema and focus on the task at hand. 
 
-**User Query**: "{{$query}}"
+**User Query**: "{{query}}"
