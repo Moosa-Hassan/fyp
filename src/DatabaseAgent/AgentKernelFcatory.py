@@ -5,7 +5,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from semantic_kernel import Kernel
-from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
+from openai import AsyncOpenAI
 
 from .AgentContext import AgentContext
 from .AgentDefinationSnippit import AgentDefinitionSnippet
@@ -51,6 +52,7 @@ class AgentKernelFactory:
             api_key = os.getenv("AZURE_OPENAI_API_KEY")
             endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
             deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
             for var, val in (
                 ("AZURE_OPENAI_API_KEY", api_key),
                 ("AZURE_OPENAI_ENDPOINT", endpoint),
@@ -58,8 +60,17 @@ class AgentKernelFactory:
             ):
                 if not val:
                     raise ValueError(f"{var} is not set.")
-            chat_service = AzureChatCompletion(
-                deployment_name=deployment, api_key=api_key, endpoint=endpoint, service_id="agent"
+
+            async_client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=endpoint.rstrip("/") + "/openai/v1/",
+            )
+
+            chat_service = OpenAIChatCompletion(
+                ai_model_id=deployment,
+                api_key=api_key,
+                service_id="agent",
+                async_client=async_client,
             )
         kernel.add_service(chat_service)
 

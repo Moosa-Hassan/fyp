@@ -8,9 +8,6 @@ class PromptExecutionSettingsHelper:
     @staticmethod
     def get_prompt_execution_settings(response_type):
         return OpenAIChatPromptExecutionSettings(
-            max_tokens=4096,
-            temperature=0.1e-9,
-            top_p=0.1e-9,
-            seed=0,
+            max_completion_tokens=1000,
             response_format=response_type,
         )
