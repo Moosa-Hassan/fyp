@@ -84,10 +84,7 @@ class DatabasePlugin:
         self._provider_name = DBConnectionExtension.get_provider_name(connection)
 
         execution_settings = OpenAIChatPromptExecutionSettings(
-            max_tokens=options.max_tokens,
-            temperature=options.temperature,
-            top_p=options.top_p,
-            seed=0,
+            max_completion_tokens=options.max_tokens,
             response_format=WriteSQLQueryResponse,
         )
 
