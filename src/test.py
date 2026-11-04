@@ -196,7 +196,7 @@ async def env():
     return ctx.kernel, agent
 
 
-@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.asyncio(loop_scope="module")   
 @pytest.mark.parametrize("question,expected_answer", TEST_CASES)
 async def test_agent_can_answer_to_data(env, question, expected_answer):
     kernel, agent = env

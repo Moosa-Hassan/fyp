@@ -52,16 +52,16 @@ class DatabaseAgentFactory:
 
         agent_key = uuid5(NAMESPACE_DNS, name) if name else UUID(int=0)
 
-        existing = await ctx.agent_store.get(agent_key)
-        if existing is not None and not update:
-            return DatabaseKernelAgent(
-                kernel=ctx.kernel,
-                name=existing.agent_name,
-                description=existing.description,
-                instructions=existing.instructions,
-                prompt_provider=ctx.prompt_provider,
-                plugin=plugin,
-            )
+        # existing = await ctx.agent_store.get(agent_key)
+        # if existing is not None and not update:
+        #     return DatabaseKernelAgent(
+        #         kernel=ctx.kernel,
+        #         name=existing.agent_name,
+        #         description=existing.description,
+        #         instructions=existing.instructions,
+        #         prompt_provider=ctx.prompt_provider,
+        #         plugin=plugin,
+        #     )
 
         table_descriptions = await DatabaseAgentFactory.memorize_schema(ctx, update=update)
 
