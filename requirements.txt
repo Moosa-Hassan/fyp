@@ -1,0 +1,11 @@
+numpy
+openai
+pandas
+pydantic
+python-dotenv
+rank-bm25
+semantic-kernel
+
+# Test dependencies
+pytest
+pytest-asyncio
