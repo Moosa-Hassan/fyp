@@ -1,6 +1,11 @@
 # FYP: AI Description-Based Database Agent
 
-This project explores how well AI-written database descriptions support natural-language-to-SQL generation. It uses Python, Semantic Kernel, Azure OpenAI, SQLite, and description retrieval with vector search and BM25 reranking.
+This project explores how well AI-written database descriptions support natural-language-to-SQL generation. It uses Python, Semantic Kernel, Azure OpenAI, SQLite, and selectable baseline or hybrid description retrieval.
+
+* See the [application flow diagrams](flow-diagram.md) for CLI modes, schema learning,
+description-only SQL generation, and rate-limit handling.
+* Use the [project and enhancement tracker](project-and-enhancements.md) to review
+implemented functionality and record future requests separately from proposed ideas.
 
 ## Current experiment: descriptions only
 
@@ -58,7 +63,7 @@ Do not commit credentials. The root ignore rules exclude `.env` and `.env.*`, ex
 
 ### Embeddings
 
-With `EMBEDDING_MODEL` empty, the app uses a 256-dimensional hashing embedding by default. This is a lexical placeholder, not a learned semantic embedding model. BM25 reranks the retrieved descriptions.
+With `EMBEDDING_MODEL` empty, the app uses a 256-dimensional hashing embedding by default. This is a lexical placeholder, not a learned semantic embedding model. Baseline retrieval reranks vector candidates with BM25; hybrid combines independent vector and BM25 rankings.
 
 Setting `EMBEDDING_MODEL` enables the optional local sentence-transformers implementation. That requires installing `sentence-transformers`, which is not included in the base requirements:
 
@@ -100,6 +105,7 @@ Use the explicit interpreter above if VS Code or the terminal reports `ModuleNot
   Logs include generated SQL and query results; treat them as potentially sensitive.
 - `--rebuild`: regenerates stored table descriptions and the agent definition once
   before running the question or simulation. It updates the same `agent_memory.db`.
+- `--retriever baseline|hybrid`: selects retrieval behavior; baseline is the default.
 
 Simulation makes live Azure calls and can incur charges. It cannot be combined with
 a positional question. Without `--rebuild`, persisted agent definitions are reused.
@@ -110,6 +116,53 @@ For breakpoints, debug [main.py](src/main.py) with these arguments in VS Code an
 the repository root as the working directory. Cases run sequentially for predictable
 stepping. Use `--rebuild` to reach schema-learning and agent-generation breakpoints.
 Description-only SQL generation remains unchanged.
+
+### Comparing description retrievers
+
+[DescriptionRetrievers.py](src/DatabaseAgent/DescriptionRetrievers.py) contains two
+strategies with the same `retrieve(query, top_k)` interface:
+
+| Strategy | Candidate selection | Final ranking |
+|---|---|---|
+| `BaselineDescriptionRetriever` | Vector top `min(top_k * 5, 100)` | Original BM25-only ordering within those candidates |
+| `HybridDescriptionRetriever` | Independent vector search and BM25 over all stored descriptions, each limited to `min(top_k * 5, 100)` candidates | Equal-weight reciprocal rank fusion (RRF) |
+
+Hybrid lexical candidates must share at least one query token with a description.
+Tokenization matches baseline: lowercase words extracted using `\w+`.
+Fusion deduplicates by record UUID and sums `1 / (60 + rank)` from each branch, using
+1-based ranks. Exact fused-score ties are resolved by UUID for deterministic results.
+Only the final top `top_k` records are returned; `top_k` must be positive and defaults
+to five.
+
+BM25 searches the complete persisted description corpus, not just vector candidates,
+so hybrid can recover a matching table that vector search missed, including a stored
+description without an embedding. It does not read the live source schema. Memory
+enumeration loads stored records, but ranking uses only their descriptions.
+
+```powershell
+.\.venv\Scripts\python.exe .\src\main.py --simulate --verbose --retriever baseline
+.\.venv\Scripts\python.exe .\src\main.py --simulate --verbose --retriever hybrid
+```
+
+Keep the same memory file, descriptions, embedding model, and SQL-generation settings
+for both runs. Do not pass `--rebuild` between the two runs. Selecting a strategy
+works with saved agents and does not itself regenerate descriptions or alter SQL
+generation, filtering, execution, or retries. Verbose logs identify the strategy and
+selected table names. Model answers remain nondeterministic.
+
+For Python callers:
+
+```python
+from DatabaseAgent.DatabasePluginOptions import DatabasePluginOptions
+
+agent = await DatabaseAgentFactory.create_agent(
+    ctx, options=DatabasePluginOptions(retriever="hybrid")
+)
+```
+
+The shared pipeline still supplies only retrieved AI-written descriptions to SQL
+generation. The baseline intentionally retains its original ranking behavior; hybrid
+is a separate experimental condition, not a replacement or a proven improvement.
 
 ### Database and persisted memory
 
@@ -132,7 +185,7 @@ refresh stored descriptions.
 
 1. Load or create the persisted agent.
 2. Rephrase the question without introducing extra dimensions or invented fields.
-3. Generate an embedding for retrieval and rerank candidate descriptions with BM25.
+3. Retrieve descriptions with the selected baseline or hybrid strategy.
 4. Supply selected descriptions to the SQL-generation prompt.
 5. Apply the read-only query filter and execute SQL.
 6. On SQL failure, pass the previous query and database error back for correction, with up to three SQL attempts.
@@ -197,6 +250,29 @@ The bundled database was inspected during troubleshooting and its latest order d
 
 These are prompt-level behavior changes, not guarantees that every model response will comply.
 
+### Description fidelity for SQL generation
+
+[ExplainTable.md](src/DatabaseAgent/Prompts/ExplainTable.md) now asks the model to:
+
+- Cover every column in supplied order, preserving exact identifiers, types, and
+  available constraints.
+- State row grain and declared keys, distinguishing structural facts from inferred
+  business meaning.
+- Include exact join-key pairs only for declared relationships, preserving composite
+  key order and marking unsupported cardinality or missing endpoints as unknown.
+- Treat sample values as examples, not proof of currency, units, uniqueness, or
+  complete data ranges.
+
+Misleading illustrative schema examples were removed. The response fields and storage
+format are unchanged. This is a prompt-only enhancement to learning: no runtime
+schema validator or live-schema augmentation was added. The separate optional hybrid
+retriever adds rank fusion during question answering, not during description generation.
+Model compliance and SQL accuracy still require evaluation.
+
+Existing cached descriptions keep their previous content. Use `--rebuild` to apply
+the new prompt; preserve a separate copy of the old memory store first if comparing
+baseline and enhanced descriptions.
+
 ### Optional raw-schema augmentation: disabled
 
 The following additions remain commented out for future comparisons:
@@ -229,7 +305,7 @@ The bundled Northwind database is explicitly preserved by exceptions in both rel
 Run the offline regression tests:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest .\src\test_rate_limits.py .\src\test_sql_grounding.py .\src\test_main_cli.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest .\src\test_rate_limits.py .\src\test_sql_grounding.py .\src\test_main_cli.py .\src\test_description_prompt.py .\src\test_description_retrievers.py -q -p no:cacheprovider
 ```
 
 - [test_rate_limits.py](src/test_rate_limits.py): retry headers, wrapped errors, exhaustion, prompt/SQL/final-answer retry wiring, saved-agent reuse, forced regeneration, and binary sample reduction.
@@ -237,7 +313,13 @@ Run the offline regression tests:
 - [test_main_cli.py](src/test_main_cli.py): simulation ordering, single-agent reuse, rebuild
   forwarding, verbose logging, existing question modes, and error propagation without live calls.
 
-The latest recorded offline run passed **37 tests**. These tests use mocked model responses and do not establish description-only model accuracy.
+- [test_description_prompt.py](src/test_description_prompt.py): description-prompt
+  rendering across providers, faithful input preservation, and response-contract compatibility.
+- [test_description_retrievers.py](src/test_description_retrievers.py): baseline
+  equivalence, independent lexical recovery, exact rank-fusion scores, deduplication,
+  deterministic ties, candidate limits, persisted corpus loading, and error propagation.
+
+The latest recorded offline run passed **81 tests**. These tests use mocked model responses and do not establish description-only model accuracy or hybrid superiority.
 
 The existing [test.py](src/test.py) is a separate live integration/evaluation suite:
 
@@ -245,7 +327,7 @@ The existing [test.py](src/test.py) is a separate live integration/evaluation su
 .\.venv\Scripts\python.exe -m pytest .\src\test.py -q
 ```
 
-It requires working Azure credentials, makes model calls, can incur charges, and uses an LLM evaluator. It was not run as part of the latest 37-test offline check.
+It requires working Azure credentials, makes model calls, can incur charges, and uses an LLM evaluator. It was not run as part of the latest 81-test offline check.
 
 Live smoke tests during troubleshooting returned 77 products and correctly reported no matching records for the relative last-month sales question. The successful sales smoke test occurred while raw-schema augmentation was enabled, before it was commented out; it must not be reported as validation of the current description-only experiment.
 

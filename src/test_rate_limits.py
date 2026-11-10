@@ -20,6 +20,7 @@ from DatabaseAgent.AgentNameResponse import AgentNameResponse
 from DatabaseAgent.DatabaseAgent import DatabaseKernelAgent
 from DatabaseAgent.DatabasePlugin import DatabasePlugin
 from DatabaseAgent.DatabasePluginOptions import DatabasePluginOptions
+from DatabaseAgent.DescriptionRetrievers import BaselineDescriptionRetriever, HybridDescriptionRetriever
 from DatabaseAgent.Internals.PromptRunner import run_prompt
 from DatabaseAgent.Internals.RetryHelper import RetryHelper
 
@@ -197,7 +198,8 @@ async def test_schema_sample_excludes_binary_payloads():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", [None, "SavedAgent"])
-async def test_saved_agent_reused_across_contexts(tmp_path, name):
+@pytest.mark.parametrize("retriever", ["baseline", "hybrid"])
+async def test_saved_agent_reused_across_contexts(tmp_path, name, retriever):
     configuration = {
         "memory": {"Kind": "SQLite", "ConnectionString": str(tmp_path / "memory.db")}
     }
@@ -214,10 +216,16 @@ async def test_saved_agent_reused_across_contexts(tmp_path, name):
             patch.object(DatabaseAgentFactory, "memorize_schema", new_callable=AsyncMock) as memorize,
             patch("DatabaseAgent.DatabaseAgentFactory.run_prompt", new_callable=AsyncMock) as prompt,
         ):
-            agent = await DatabaseAgentFactory.create_agent(restored, name=name)
+            agent = await DatabaseAgentFactory.create_agent(
+                restored, name=name, options=DatabasePluginOptions(retriever=retriever)
+            )
         assert agent.name == "SavedAgent"
         assert agent.description == "Saved description"
         assert agent.instructions == "Saved instructions"
+        expected_retriever = (
+            HybridDescriptionRetriever if retriever == "hybrid" else BaselineDescriptionRetriever
+        )
+        assert type(agent._plugin._retriever) is expected_retriever
         memorize.assert_not_awaited()
         prompt.assert_not_awaited()
     finally:

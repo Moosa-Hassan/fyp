@@ -14,8 +14,8 @@ T = TypeVar("T")
 
 
 @dataclass
-class VectorSearchResult:
-    record: Any
+class VectorSearchResult(Generic[T]):
+    record: T
     score: float | None = None
 
 
@@ -66,10 +66,14 @@ class SimpleVectorStore(Generic[T]):
                 return rec
         return None
 
-    async def search(self, embedding: Any, top: int = 5) -> AsyncIterator[VectorSearchResult]:
+    async def get_all(self) -> list[T]:
+        await self.ensure_collection()
+        return list(self._records.values())
+
+    async def search(self, embedding: Any, top: int = 5) -> AsyncIterator[VectorSearchResult[T]]:
         q = np.asarray(embedding, dtype=float)
         qn = np.linalg.norm(q) or 1.0
-        scored: list[VectorSearchResult] = []
+        scored: list[VectorSearchResult[T]] = []
         for rec in self._records.values():
             emb = getattr(rec, "text_embedding", None)
             if emb is None or len(emb) == 0:

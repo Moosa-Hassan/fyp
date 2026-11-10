@@ -72,10 +72,10 @@ def context(monkeypatch):
         ctx.connection.close()
 
 
-def make_plugin(ctx):
+def make_plugin(ctx, retriever="baseline"):
     return DatabasePlugin(
         prompt_provider=ctx.prompt_provider,
-        options=DatabasePluginOptions(),
+        options=DatabasePluginOptions(retriever=retriever),
         vector_store=ctx.table_store,
         connection=ctx.connection,
         embedding_service=ctx.embedding,
@@ -107,8 +107,9 @@ async def test_optional_live_schema_block_is_not_rendered(context):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("with_description", [False, True])
-async def test_sales_query_uses_only_retrieved_descriptions(context, with_description):
-    plugin = make_plugin(context)
+@pytest.mark.parametrize("retriever", ["baseline", "hybrid"])
+async def test_sales_query_uses_only_retrieved_descriptions(context, with_description, retriever):
+    plugin = make_plugin(context, retriever)
     description = "Sales are stored in Orders and Order Details."
     if with_description:
         await context.table_store.upsert(

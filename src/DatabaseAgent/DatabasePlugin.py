@@ -4,9 +4,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Annotated, Any, AsyncIterator, Awaitable, Callable, Protocol
-
-from rank_bm25 import BM25Okapi
+from typing import Annotated, Any, Awaitable, Callable, Protocol
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings
 from semantic_kernel.functions import (
@@ -17,13 +15,18 @@ from semantic_kernel.functions import (
 from semantic_kernel.prompt_template import PromptTemplateConfig
 
 from .DatabasePluginOptions import DatabasePluginOptions
+from .DescriptionRetrievers import (
+    BaselineDescriptionRetriever,
+    HybridDescriptionRetriever,
+    IDescriptionRetriever,
+    IDescriptionStore,
+)
 from .Extensions.DBConnectionExtension import DBConnectionExtension
 from .Internals.Embeddings import IEmbeddingService
 from .Internals.MarkdownRenderer import MarkdownRenderer
 from .Internals.PromptRunner import parse_json_model
 from .Internals.QueryExecutor import QueryExecutor
 from .Internals.RetryHelper import RetryHelper
-from .Internals.VectorStore import VectorSearchResult
 from .IPromptProvider import AgentPromptConstants, IPromptProvider
 from .WriteSQLQueryResponse import WriteSQLQueryResponse
 
@@ -42,10 +45,6 @@ class IQueryExecutionFilter(Protocol):
         context: QueryExecutionContext,
         next_: Callable[[QueryExecutionContext], Awaitable[tuple[bool, str]]],
     ) -> tuple[bool, str]: ...
-
-
-class IVectorSearchable(Protocol):
-    def search(self, embedding: Any, top: int) -> AsyncIterator[VectorSearchResult]: ...
 
 
 _FORBIDDEN = re.compile(r"\b(insert|update|delete|drop|alter|create|attach|detach|pragma|truncate|grant)\b")
@@ -67,7 +66,7 @@ class DatabasePlugin:
         self,
         prompt_provider: IPromptProvider,
         options: DatabasePluginOptions,
-        vector_store: IVectorSearchable,
+        vector_store: IDescriptionStore,
         connection: Any,
         embedding_service: IEmbeddingService,
         filters: list[IQueryExecutionFilter] | None = None,
@@ -78,9 +77,12 @@ class DatabasePlugin:
 
         self._options = options
         self._log = logger or logging.getLogger(__name__)
-        self._vector_store = vector_store
         self._connection = connection
-        self._embedding = embedding_service
+        retriever_type = (
+            HybridDescriptionRetriever if options.retriever == "hybrid"
+            else BaselineDescriptionRetriever
+        )
+        self._retriever: IDescriptionRetriever = retriever_type(vector_store, embedding_service)
         self._filters = filters if filters is not None else [ReadOnlyQueryFilter()]
         self._provider_name = DBConnectionExtension.get_provider_name(connection)
 
@@ -115,12 +117,10 @@ class DatabasePlugin:
         original_query: Annotated[str, "The original query, used for debugging purposes."],
     ) -> Annotated[str, "A Markdown representation of the query result."]:
         try:
-            embedding = await self._embedding.generate(prompt)
-
-            top = min(self._options.top_k * 5, 100)
-            related = [r async for r in self._vector_store.search(embedding, top=top)]
-            ranked = self._bm25_rank(
-                prompt, related, lambda r: r.record.description or "", top_n=self._options.top_k
+            ranked = await self._retriever.retrieve(prompt, self._options.top_k)
+            self._log.info(
+                "Retriever %s selected tables: %s",
+                self._options.retriever, [result.record.table_name for result in ranked],
             )
 
             # Description-only experiment: do not expose stored raw definitions to SQL generation.
@@ -218,17 +218,6 @@ class DatabasePlugin:
                 lambda ctx: cls._invoke_filters_or_query(filters, callback, ctx, index + 1),
             )
         return await callback(context)
-
-    @staticmethod
-    def _bm25_rank(query: str, items: list, text_of: Callable[[Any], str], top_n: int) -> list:
-        if not items:
-            return []
-        corpus = [re.findall(r"\w+", text_of(i).lower()) or [""] for i in items]
-        bm25 = BM25Okapi(corpus)
-        scores = bm25.get_scores(re.findall(r"\w+", query.lower()))
-        order = sorted(range(len(items)), key=lambda i: scores[i], reverse=True)
-        return [items[i] for i in order[:top_n]]
-
 
 async def _allow_query(_context: QueryExecutionContext) -> tuple[bool, str]:
     return False, ""  # (filtered, message): nothing filtered
