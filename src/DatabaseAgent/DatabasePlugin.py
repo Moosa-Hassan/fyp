@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Annotated, Any, AsyncIterator, Awaitable, Callable, Protocol
 
 from rank_bm25 import BM25Okapi
@@ -122,7 +123,14 @@ class DatabasePlugin:
                 prompt, related, lambda r: r.record.description or "", top_n=self._options.top_k
             )
 
+            # Description-only experiment: do not expose stored raw definitions to SQL generation.
             table_definitions = "".join(f"{r.record.description}\n\n---\n\n" for r in ranked)
+            # Optional raw-definition augmentation: replace the assignment above to re-enable.
+            # table_definitions = "".join(
+            #     f"### {r.record.table_name}\n"
+            #     f"{r.record.definition or ''}\n\n{r.record.description or ''}\n\n---\n\n"
+            #     for r in ranked
+            # )
 
             sql_query = ""
 
@@ -167,14 +175,33 @@ class DatabasePlugin:
         previous_sql_query: str | None = None,
         previous_sql_exception: Exception | None = None,
     ) -> str | None:
+        """Generate SQL from retrieved AI-written descriptions, without raw-schema augmentation."""
+        # Optional live-schema augmentation: uncomment this block, the databaseSchema argument,
+        # and the matching Handlebars comment in WriteSQLQuery.md together to re-enable.
+        # database_schema = ""
+        # if self._provider_name == "SQLite":
+        #     schema = await QueryExecutor.execute_sql_async(
+        #         self._connection,
+        #         "SELECT sql FROM sqlite_master "
+        #         "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' "
+        #         "AND sql IS NOT NULL ORDER BY name",
+        #         self._log,
+        #     )
+        #     database_schema = "\n\n".join(schema["sql"])
         arguments = KernelArguments(
             prompt=prompt,
             tablesDefinition=tables_definitions,
             previousAttempt=previous_sql_query or "",
             previousException=str(previous_sql_exception) if previous_sql_exception else "",
             providerName=self._provider_name,
+            # Optional live-schema augmentation; enable with the block and template noted above.
+            # databaseSchema=database_schema,
+            currentDate=datetime.now(timezone.utc).date().isoformat(),
         )
-        function_result = await self._write_sql_function.invoke(kernel, arguments)
+        function_result = await RetryHelper.retry_rate_limited(
+            lambda: self._write_sql_function.invoke(kernel, arguments),
+            logger=self._log,
+        )
         return parse_json_model(WriteSQLQueryResponse, str(function_result)).query
 
     @classmethod

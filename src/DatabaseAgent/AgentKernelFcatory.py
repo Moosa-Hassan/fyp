@@ -64,6 +64,7 @@ class AgentKernelFactory:
             async_client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=endpoint.rstrip("/") + "/openai/v1/",
+                max_retries=0,
             )
 
             chat_service = OpenAIChatCompletion(

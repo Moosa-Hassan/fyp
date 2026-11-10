@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 
 from pydantic import ValidationError
 from semantic_kernel import Kernel
@@ -12,12 +13,19 @@ from semantic_kernel.contents import AuthorRole, ChatHistory, ChatMessageContent
 from .AgentResponse import AgentResponse
 from .DatabasePlugin import DatabasePlugin
 from .Internals.PromptRunner import parse_json_model, run_prompt
+from .Internals.RetryHelper import RetryHelper
 from .IPromptProvider import AgentPromptConstants, IPromptProvider
 from .RewriteQueryResponse import RewriteQueryResponse
 
 logger = logging.getLogger(__name__)
 
-OUTPUT_FORMAT_PROMPT = """# Output Format
+OUTPUT_FORMAT_PROMPT = """Use only the database query results as evidence for the answer.
+Do not invent amounts, currencies, dimensions, or records. If results are empty or
+aggregate amounts are null, say there are no matching records for the requested
+period; do not imply that missing data proves zero real-world sales. Never shift
+the requested period to the latest available data.
+
+# Output Format
 
 The output should be a JSON object structured as follows:
 
@@ -136,7 +144,10 @@ class DatabaseKernelAgent:
 
     async def rewrite_query(self, query: str) -> str:
         template = self._prompt_provider.read_prompt(AgentPromptConstants.REWRITE_USER_QUERY)
-        response = await run_prompt(self.kernel, template, RewriteQueryResponse, query=query)
+        response = await run_prompt(
+            self.kernel, template, RewriteQueryResponse,
+            query=query, currentDate=datetime.now(timezone.utc).date().isoformat(),
+        )
         return response.query or query  # fall back to the original question
 
     def _system(self, content: str) -> ChatMessageContent:
@@ -150,7 +161,12 @@ class DatabaseKernelAgent:
                     role=self.instructions_role, content=self.instructions, name=self._message_name
                 )
             )
-        chat.add_message(self._system(OUTPUT_FORMAT_PROMPT))
+        chat.add_message(
+            self._system(
+                f"Current UTC date: {datetime.now(timezone.utc).date().isoformat()}\n\n"
+                + OUTPUT_FORMAT_PROMPT
+            )
+        )
         for m in history.messages:
             chat.add_message(m)
         return chat
@@ -165,7 +181,10 @@ class DatabaseKernelAgent:
         settings = settings or OpenAIChatPromptExecutionSettings(response_format={"type": "json_object"})
 
         chat_service = self.kernel.get_service(type=ChatCompletionClientBase)
-        result = await chat_service.get_chat_message_content(chat, settings, kernel=self.kernel)
+        result = await RetryHelper.retry_rate_limited(
+            lambda: chat_service.get_chat_message_content(chat, settings, kernel=self.kernel),
+            logger=logger,
+        )
         content = str(result.content if result is not None else "")
 
         try:
