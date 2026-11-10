@@ -18,6 +18,7 @@ from .Extensions.DBConnectionExtension import DBConnectionExtension
 from .Internals.MarkdownRenderer import MarkdownRenderer
 from .Internals.PromptRunner import run_prompt
 from .Internals.QueryExecutor import QueryExecutor
+from .Internals.RetryHelper import RetryHelper
 from .IPromptProvider import AgentPromptConstants
 from .TableDefinationSnippet import TableDefinitionSnippet
 from .WriteSQLQueryResponse import WriteSQLQueryResponse
@@ -52,16 +53,16 @@ class DatabaseAgentFactory:
 
         agent_key = uuid5(NAMESPACE_DNS, name) if name else UUID(int=0)
 
-        # existing = await ctx.agent_store.get(agent_key)
-        # if existing is not None and not update:
-        #     return DatabaseKernelAgent(
-        #         kernel=ctx.kernel,
-        #         name=existing.agent_name,
-        #         description=existing.description,
-        #         instructions=existing.instructions,
-        #         prompt_provider=ctx.prompt_provider,
-        #         plugin=plugin,
-        #     )
+        existing = await ctx.agent_store.get(agent_key)
+        if existing is not None and not update:
+            return DatabaseKernelAgent(
+                kernel=ctx.kernel,
+                name=existing.agent_name,
+                description=existing.description,
+                instructions=existing.instructions,
+                prompt_provider=ctx.prompt_provider,
+                plugin=plugin,
+            )
 
         table_descriptions = await DatabaseAgentFactory.memorize_schema(ctx, update=update)
 
@@ -143,6 +144,8 @@ class DatabaseAgentFactory:
                 previous_sql = response.query
                 return await QueryExecutor.execute_sql_async(ctx.connection, previous_sql, ctx.logger)
             except Exception as exc:  # noqa: BLE001
+                if RetryHelper.rate_limit_error(exc) is not None:
+                    raise
                 previous_exc = exc
                 if attempt == 2:
                     raise
@@ -180,6 +183,7 @@ class DatabaseAgentFactory:
 
     @staticmethod
     async def _get_structure_and_sample(ctx: AgentContext, table_name: str) -> tuple[str, str]:
+        """Return schema and five sample rows, summarizing SQLite binary fields for LLM input."""
         provider = DBConnectionExtension.get_provider_name(ctx.connection)
 
         if provider == "SQLite":
@@ -194,6 +198,11 @@ class DatabaseAgentFactory:
                 definition += "\n\nForeign keys:\n" + MarkdownRenderer.render(fks)
             sample = await QueryExecutor.execute_sql_async(
                 ctx.connection, f"SELECT * FROM {table_name} LIMIT 5", ctx.logger
+            )
+            sample = sample.map(
+                lambda value: f"[binary data: {len(value)} bytes]"
+                if isinstance(value, (bytes, bytearray, memoryview))
+                else value
             )
             return definition, MarkdownRenderer.render(sample)
 

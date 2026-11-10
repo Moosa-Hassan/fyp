@@ -9,6 +9,7 @@ from semantic_kernel.functions import KernelArguments, KernelFunctionFromPrompt
 from semantic_kernel.prompt_template import PromptTemplateConfig
 
 from .PromptExecutionSettingsHelper import PromptExecutionSettingsHelper
+from .RetryHelper import RetryHelper
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -37,5 +38,7 @@ async def run_prompt(kernel: Kernel, template: str, response_model: type[M], **a
         ),
     )
     clean = {k: ("" if v is None else v) for k, v in arguments.items()}
-    result = await fn.invoke(kernel, KernelArguments(**clean))
+    result = await RetryHelper.retry_rate_limited(
+        lambda: fn.invoke(kernel, KernelArguments(**clean))
+    )
     return parse_json_model(response_model, str(result))

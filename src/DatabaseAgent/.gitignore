@@ -25,6 +25,7 @@ htmlcov/
 
 # Local databases and runtime files
 *.db
+!northwind.db
 *.sqlite
 *.sqlite3
 *.log

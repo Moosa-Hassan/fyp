@@ -4,5 +4,9 @@ from .AgentContext import AgentContext
 from .AgentKernelFcatory import AgentKernelFactory
 from .DatabaseAgent import DatabaseKernelAgent
 from .DatabaseAgentFactory import DatabaseAgentFactory
+from .DescriptionRetrievers import BaselineDescriptionRetriever, HybridDescriptionRetriever
 
-__all__ = ["AgentContext", "AgentKernelFactory", "DatabaseAgentFactory", "DatabaseKernelAgent"]
+__all__ = [
+    "AgentContext", "AgentKernelFactory", "DatabaseAgentFactory", "DatabaseKernelAgent",
+    "BaselineDescriptionRetriever", "HybridDescriptionRetriever",
+]
