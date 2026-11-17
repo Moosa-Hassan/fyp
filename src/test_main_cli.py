@@ -5,13 +5,17 @@ from unittest.mock import AsyncMock, Mock, call, patch
 import pytest
 
 import main
+from DatabaseAgent.DatabaseAgent import RewriteMode
 from DatabaseAgent.DatabasePluginOptions import DatabasePluginOptions
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("rebuild", [False, True])
 @pytest.mark.parametrize("retriever", ["baseline", "hybrid"])
-async def test_single_question_preserves_behavior_and_forwards_rebuild(rebuild, retriever):
+@pytest.mark.parametrize("rewrite_mode", ["always", "off", "conditional"])
+async def test_single_question_forwards_rebuild_retriever_and_rewrite_mode(
+    rebuild, retriever, rewrite_mode: RewriteMode
+):
     agent = Mock(invoke=AsyncMock(return_value="77 products"))
     with (
         patch.object(main.AgentKernelFactory, "configure_kernel") as configure,
@@ -19,29 +23,45 @@ async def test_single_question_preserves_behavior_and_forwards_rebuild(rebuild, 
                      return_value=agent) as create,
     ):
         assert await main.run(
-            "How many products?", rebuild=rebuild, retriever=retriever
+            "How many products?",
+            rebuild=rebuild,
+            retriever=retriever,
+            rewrite_mode=rewrite_mode,
         ) == "77 products"
     create.assert_awaited_once_with(
-        configure.return_value, update=rebuild, options=DatabasePluginOptions(retriever=retriever)
+        configure.return_value,
+        update=rebuild,
+        options=DatabasePluginOptions(retriever=retriever),
     )
-    agent.invoke.assert_awaited_once_with("How many products?")
+    agent.invoke.assert_awaited_once_with(
+        "How many products?", rewrite_mode=rewrite_mode
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("retriever", ["baseline", "hybrid"])
-async def test_simulation_runs_shared_cases_in_order_with_one_agent(capsys, retriever):
+@pytest.mark.parametrize("rewrite_mode", ["always", "off", "conditional"])
+async def test_simulation_runs_shared_cases_in_order_with_one_agent(
+    capsys, retriever, rewrite_mode: RewriteMode
+):
     agent = Mock(invoke=AsyncMock(return_value="An answer"))
     with (
         patch.object(main.AgentKernelFactory, "configure_kernel") as configure,
         patch.object(main.DatabaseAgentFactory, "create_agent", new_callable=AsyncMock,
                      return_value=agent) as create,
     ):
-        await main.run_simulation(rebuild=True, retriever=retriever)
+        await main.run_simulation(
+            rebuild=True, retriever=retriever, rewrite_mode=rewrite_mode
+        )
     configure.assert_called_once()
     create.assert_awaited_once_with(
-        configure.return_value, update=True, options=DatabasePluginOptions(retriever=retriever)
+        configure.return_value,
+        update=True,
+        options=DatabasePluginOptions(retriever=retriever),
     )
-    assert agent.invoke.await_args_list == [call(question) for question, _ in main.TEST_CASES]
+    assert agent.invoke.await_args_list == [
+        call(question, rewrite_mode=rewrite_mode) for question, _ in main.TEST_CASES
+    ]
     output = capsys.readouterr().out
     for question, expected in main.TEST_CASES:
         assert question in output
@@ -72,7 +92,18 @@ async def test_simulation_propagates_errors_and_stops():
 
 def test_cli_simulation_verbose_and_rebuild(monkeypatch):
     monkeypatch.setattr(
-        sys, "argv", ["main.py", "--simulate", "--verbose", "--rebuild", "--retriever", "hybrid"]
+        sys,
+        "argv",
+        [
+            "main.py",
+            "--simulate",
+            "--verbose",
+            "--rebuild",
+            "--retriever",
+            "hybrid",
+            "--rewrite-mode",
+            "off",
+        ],
     )
     logger = logging.getLogger("DatabaseAgent.DatabaseAgent")
     previous_level = logger.level
@@ -83,7 +114,9 @@ def test_cli_simulation_verbose_and_rebuild(monkeypatch):
             patch.object(main.logging, "basicConfig") as configure_logging,
         ):
             main.main()
-        simulate.assert_awaited_once_with(rebuild=True, retriever="hybrid")
+        simulate.assert_awaited_once_with(
+            rebuild=True, retriever="hybrid", rewrite_mode="off"
+        )
         prompt.assert_not_called()
         configure_logging.assert_called_once()
         assert logger.level == logging.DEBUG
@@ -101,7 +134,12 @@ def test_cli_existing_question_modes(monkeypatch, interactive, capsys):
         patch.object(main, "run", new_callable=AsyncMock, return_value="77 products") as run,
     ):
         main.main()
-    run.assert_awaited_once_with("How many products?", rebuild=False, retriever="baseline")
+    run.assert_awaited_once_with(
+        "How many products?",
+        rebuild=False,
+        retriever="baseline",
+        rewrite_mode="always",
+    )
     assert prompt.call_count == int(interactive)
     assert "77 products" in capsys.readouterr().out
 
@@ -117,6 +155,13 @@ def test_cli_rejects_simulation_with_question(monkeypatch):
 
 def test_cli_rejects_unknown_retriever(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["main.py", "--retriever", "unknown"])
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+    assert exc.value.code == 2
+
+
+def test_cli_rejects_unknown_rewrite_mode(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py", "--rewrite-mode", "unknown"])
     with pytest.raises(SystemExit) as exc:
         main.main()
     assert exc.value.code == 2

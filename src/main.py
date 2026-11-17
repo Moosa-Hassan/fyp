@@ -4,27 +4,34 @@ import logging
 from typing import Literal
 
 from DatabaseAgent import AgentKernelFactory, DatabaseAgentFactory
-from DatabaseAgent.DatabaseAgent import DatabaseKernelAgent
+from DatabaseAgent.DatabaseAgent import DatabaseKernelAgent, RewriteMode
 from DatabaseAgent.DatabasePluginOptions import DatabasePluginOptions
 from simulation_cases import TEST_CASES
 
 
 async def create_agent(
-    rebuild: bool = False, retriever: Literal["baseline", "hybrid"] = "baseline"
+    rebuild: bool = False,
+    retriever: Literal["baseline", "hybrid"] = "baseline",
 ) -> DatabaseKernelAgent:
     ctx = AgentKernelFactory.configure_kernel(
         {"memory": {"Kind": "SQLite", "ConnectionString": "agent_memory.db"}}
     )
     return await DatabaseAgentFactory.create_agent(
-        ctx, update=rebuild, options=DatabasePluginOptions(retriever=retriever)
+        ctx,
+        update=rebuild,
+        options=DatabasePluginOptions(retriever=retriever),
     )
 
 
 async def run(
-    question: str, *, rebuild: bool = False, retriever: Literal["baseline", "hybrid"] = "baseline"
+    question: str,
+    *,
+    rebuild: bool = False,
+    retriever: Literal["baseline", "hybrid"] = "baseline",
+    rewrite_mode: RewriteMode = "always",
 ) -> str:
     agent = await create_agent(rebuild, retriever)
-    answer = await agent.invoke(question)
+    answer = await agent.invoke(question, rewrite_mode=rewrite_mode)
 
     if not answer:
         raise RuntimeError("agent returned no answer")
@@ -33,13 +40,16 @@ async def run(
 
 
 async def run_simulation(
-    *, rebuild: bool = False, retriever: Literal["baseline", "hybrid"] = "baseline"
+    *,
+    rebuild: bool = False,
+    retriever: Literal["baseline", "hybrid"] = "baseline",
+    rewrite_mode: RewriteMode = "always",
 ) -> None:
     agent = await create_agent(rebuild, retriever)
     for index, (question, expected) in enumerate(TEST_CASES, start=1):
         print(f"\n{'=' * 80}\nCase {index}/{len(TEST_CASES)}\nQuestion: {question}", flush=True)
         print(f"\nExpected answer:\n{expected}", flush=True)
-        answer = await agent.invoke(question)
+        answer = await agent.invoke(question, rewrite_mode=rewrite_mode)
         if not answer:
             raise RuntimeError(f"agent returned no answer for simulation case {index}")
         print(f"\nActual answer:\n{answer}", flush=True)
@@ -68,6 +78,10 @@ def main() -> None:
         "--retriever", choices=("baseline", "hybrid"), default="baseline",
         help="Description retrieval strategy (default: baseline).",
     )
+    parser.add_argument(
+        "--rewrite-mode", choices=("always", "off", "conditional"), default="always",
+        help="Question rewriting mode (default: always).",
+    )
     args = parser.parse_args()
 
     if args.verbose:
@@ -78,14 +92,29 @@ def main() -> None:
     if args.simulate:
         if question:
             parser.error("--simulate cannot be combined with a question")
-        asyncio.run(run_simulation(rebuild=args.rebuild, retriever=args.retriever))
+        asyncio.run(
+            run_simulation(
+                rebuild=args.rebuild,
+                retriever=args.retriever,
+                rewrite_mode=args.rewrite_mode,
+            )
+        )
         return
     if not question:
         question = input("Question: ").strip()
     if not question:
         parser.error("a question is required")
 
-    print(asyncio.run(run(question, rebuild=args.rebuild, retriever=args.retriever)))
+    print(
+        asyncio.run(
+            run(
+                question,
+                rebuild=args.rebuild,
+                retriever=args.retriever,
+                rewrite_mode=args.rewrite_mode,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":

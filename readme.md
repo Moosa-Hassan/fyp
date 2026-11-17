@@ -96,6 +96,8 @@ Use the explicit interpreter above if VS Code or the terminal reports `ModuleNot
 .\.venv\Scripts\python.exe .\src\main.py --simulate --verbose
 .\.venv\Scripts\python.exe .\src\main.py --simulate --verbose --rebuild
 .\.venv\Scripts\python.exe .\src\main.py --verbose "How many products are there?"
+.\.venv\Scripts\python.exe .\src\main.py --rewrite-mode off "How many products are there?"
+.\.venv\Scripts\python.exe .\src\main.py --rewrite-mode conditional "How many products are there?"
 ```
 
 - `--simulate`: runs all ten questions shared with the integration tests, sequentially
@@ -106,6 +108,16 @@ Use the explicit interpreter above if VS Code or the terminal reports `ModuleNot
 - `--rebuild`: regenerates stored table descriptions and the agent definition once
   before running the question or simulation. It updates the same `agent_memory.db`.
 - `--retriever baseline|hybrid`: selects retrieval behavior; baseline is the default.
+- `--rewrite-mode always|off|conditional`: selects question rewriting behavior;
+  `always` is the default baseline, `off` uses the original question, and
+  `conditional` currently preserves the original question as a placeholder until
+  conditional decision rules are implemented.
+
+The rewrite mode is a request/session setting passed to each agent invocation; it
+is not stored in the persisted agent definition.
+
+When rewriting changes the question, verbose output records both the original and
+rewritten questions after the answer is generated.
 
 Simulation makes live Azure calls and can incur charges. It cannot be combined with
 a positional question. Without `--rebuild`, persisted agent definitions are reused.
@@ -305,13 +317,17 @@ The bundled Northwind database is explicitly preserved by exceptions in both rel
 Run the offline regression tests:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest .\src\test_rate_limits.py .\src\test_sql_grounding.py .\src\test_main_cli.py .\src\test_description_prompt.py .\src\test_description_retrievers.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest .\src\test_rate_limits.py .\src\test_sql_grounding.py .\src\test_main_cli.py .\src\test_description_prompt.py .\src\test_description_retrievers.py .\src\test_question_rewrite_modes.py -q -p no:cacheprovider
 ```
 
 - [test_rate_limits.py](src/test_rate_limits.py): retry headers, wrapped errors, exhaustion, prompt/SQL/final-answer retry wiring, saved-agent reuse, forced regeneration, and binary sample reduction.
 - [test_sql_grounding.py](src/test_sql_grounding.py): description-only SQL inputs, exclusion of raw definitions and live-schema queries, disabled prompt rendering, SQL-repair feedback, date boundaries, and missing historical data.
 - [test_main_cli.py](src/test_main_cli.py): simulation ordering, single-agent reuse, rebuild
-  forwarding, verbose logging, existing question modes, and error propagation without live calls.
+  forwarding, rewrite-mode forwarding, verbose logging, existing question modes, and
+  error propagation without live calls.
+
+- [test_question_rewrite_modes.py](src/test_question_rewrite_modes.py): always, off,
+  and conditional query selection plus rewritten-query logging.
 
 - [test_description_prompt.py](src/test_description_prompt.py): description-prompt
   rendering across providers, faithful input preservation, and response-contract compatibility.
@@ -319,7 +335,7 @@ Run the offline regression tests:
   equivalence, independent lexical recovery, exact rank-fusion scores, deduplication,
   deterministic ties, candidate limits, persisted corpus loading, and error propagation.
 
-The latest recorded offline run passed **81 tests**. These tests use mocked model responses and do not establish description-only model accuracy or hybrid superiority.
+The latest recorded offline run passed **98 tests**. These tests use mocked model responses and do not establish description-only model accuracy or hybrid superiority.
 
 The existing [test.py](src/test.py) is a separate live integration/evaluation suite:
 
@@ -327,7 +343,7 @@ The existing [test.py](src/test.py) is a separate live integration/evaluation su
 .\.venv\Scripts\python.exe -m pytest .\src\test.py -q
 ```
 
-It requires working Azure credentials, makes model calls, can incur charges, and uses an LLM evaluator. It was not run as part of the latest 81-test offline check.
+It requires working Azure credentials, makes model calls, can incur charges, and uses an LLM evaluator. It was not run as part of the latest 98-test offline check.
 
 Live smoke tests during troubleshooting returned 77 products and correctly reported no matching records for the relative last-month sales question. The successful sales smoke test occurred while raw-schema augmentation was enabled, before it was commented out; it must not be reported as validation of the current description-only experiment.
 

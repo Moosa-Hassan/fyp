@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import ValidationError
 from semantic_kernel import Kernel
@@ -18,6 +19,8 @@ from .IPromptProvider import AgentPromptConstants, IPromptProvider
 from .RewriteQueryResponse import RewriteQueryResponse
 
 logger = logging.getLogger(__name__)
+
+RewriteMode = Literal["always", "off", "conditional"]
 
 OUTPUT_FORMAT_PROMPT = """Use only the database query results as evidence for the answer.
 Do not invent amounts, currencies, dimensions, or records. If results are empty or
@@ -108,6 +111,7 @@ class DatabaseKernelAgent:
         user_query: str,
         chat_history: ChatHistory | None = None,
         settings: OpenAIChatPromptExecutionSettings | None = None,
+        rewrite_mode: RewriteMode = "always",
     ) -> str | None:
         """chat_history is the persistent thread: only the user message and the final answer
         are added to it. DB-result messages live in a working copy."""
@@ -122,8 +126,8 @@ class DatabaseKernelAgent:
 
         last_user = next(m.content for m in reversed(history.messages) if m.role == AuthorRole.USER)
 
-        rewritten = await self.rewrite_query(last_user)
-        logger.debug("Rewritten query: %s", rewritten)
+        rewritten = await self._prepare_query(last_user, rewrite_mode)
+        logger.debug("Query sent to SQL generation: %s", rewritten)
 
         data = await self._plugin.execute_query_async(
             kernel=self.kernel,
@@ -140,7 +144,24 @@ class DatabaseKernelAgent:
             chat_history.add_message(
                 ChatMessageContent(role=AuthorRole.ASSISTANT, content=answer, name=self._message_name)
             )
+        if rewritten != last_user:
+            logger.info("Original query: %s", last_user)
+            logger.info("Rewritten query: %s", rewritten)
         return answer
+
+    async def _prepare_query(self, query: str, rewrite_mode: RewriteMode) -> str:
+        if rewrite_mode == "off":
+            return query
+
+        if rewrite_mode == "conditional" and not self._should_rewrite_conditionally(query):
+            logger.info("Conditional rewrite placeholder preserved the original query.")
+            return query
+
+        return await self.rewrite_query(query)
+
+    def _should_rewrite_conditionally(self, query: str) -> bool:
+        """Placeholder for the future conditional rewrite decision."""
+        return False
 
     async def rewrite_query(self, query: str) -> str:
         template = self._prompt_provider.read_prompt(AgentPromptConstants.REWRITE_USER_QUERY)
