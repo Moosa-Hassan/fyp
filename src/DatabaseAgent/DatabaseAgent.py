@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Callable, Literal
 
 from pydantic import ValidationError
 from semantic_kernel import Kernel
@@ -16,11 +16,22 @@ from .DatabasePlugin import DatabasePlugin
 from .Internals.PromptRunner import parse_json_model, run_prompt
 from .Internals.RetryHelper import RetryHelper
 from .IPromptProvider import AgentPromptConstants, IPromptProvider
+from .QueryAnalysisResponse import QueryAnalysisResponse
 from .RewriteQueryResponse import RewriteQueryResponse
 
 logger = logging.getLogger(__name__)
 
 RewriteMode = Literal["always", "off", "conditional"]
+
+
+class ClarificationRequired(Exception):
+    def __init__(self, question: str) -> None:
+        super().__init__(question)
+        self.question = question
+
+
+class QueryAborted(Exception):
+    """Raised when the user rejects the rewritten query."""
 
 OUTPUT_FORMAT_PROMPT = """Use only the database query results as evidence for the answer.
 Do not invent amounts, currencies, dimensions, or records. If results are empty or
@@ -112,6 +123,8 @@ class DatabaseKernelAgent:
         chat_history: ChatHistory | None = None,
         settings: OpenAIChatPromptExecutionSettings | None = None,
         rewrite_mode: RewriteMode = "always",
+        clarification: str | None = None,
+        confirm_rewrite: Callable[[str, str], bool] | None = None,
     ) -> str | None:
         """chat_history is the persistent thread: only the user message and the final answer
         are added to it. DB-result messages live in a working copy."""
@@ -126,8 +139,26 @@ class DatabaseKernelAgent:
 
         last_user = next(m.content for m in reversed(history.messages) if m.role == AuthorRole.USER)
 
-        rewritten = await self._prepare_query(last_user, rewrite_mode)
+        analysis = await self.analyze_query(last_user, clarification)
+        if analysis.outcome == "clarify":
+            if not analysis.clarification_question.strip():
+                raise RuntimeError("query analysis requested clarification without a question")
+            raise ClarificationRequired(analysis.clarification_question)
+
+        rewritten = await self._prepare_query(
+            last_user,
+            rewrite_mode,
+            analysis,
+            clarification,
+        )
         logger.debug("Query sent to SQL generation: %s", rewritten)
+
+        if rewritten != last_user:
+            logger.info("Original query: %s", last_user)
+            logger.info("Rewritten query: %s", rewritten)
+            if confirm_rewrite is not None and not confirm_rewrite(last_user, rewritten):
+                logger.info("User aborted the rewritten query.")
+                raise QueryAborted()
 
         data = await self._plugin.execute_query_async(
             kernel=self.kernel,
@@ -144,30 +175,53 @@ class DatabaseKernelAgent:
             chat_history.add_message(
                 ChatMessageContent(role=AuthorRole.ASSISTANT, content=answer, name=self._message_name)
             )
-        if rewritten != last_user:
-            logger.info("Original query: %s", last_user)
-            logger.info("Rewritten query: %s", rewritten)
         return answer
 
-    async def _prepare_query(self, query: str, rewrite_mode: RewriteMode) -> str:
+    async def analyze_query(
+        self, query: str, clarification: str | None = None
+    ) -> QueryAnalysisResponse:
+        template = self._prompt_provider.read_prompt(AgentPromptConstants.ANALYZE_USER_QUERY)
+        return await run_prompt(
+            self.kernel,
+            template,
+            QueryAnalysisResponse,
+            query=query,
+            clarification=clarification,
+            currentDate=datetime.now(timezone.utc).date().isoformat(),
+        )
+
+    async def _prepare_query(
+        self,
+        query: str,
+        rewrite_mode: RewriteMode,
+        analysis: QueryAnalysisResponse,
+        clarification: str | None,
+    ) -> str:
         if rewrite_mode == "off":
             return query
 
-        if rewrite_mode == "conditional" and not self._should_rewrite_conditionally(query):
-            logger.info("Conditional rewrite placeholder preserved the original query.")
+        if rewrite_mode == "conditional" and analysis.outcome != "normalize":
+            logger.info("Conditional analysis preserved the original query.")
             return query
 
-        return await self.rewrite_query(query)
+        return await self.rewrite_query(
+            query,
+            guidance=analysis.guidance,
+            clarification=clarification,
+        )
 
-    def _should_rewrite_conditionally(self, query: str) -> bool:
-        """Placeholder for the future conditional rewrite decision."""
-        return False
-
-    async def rewrite_query(self, query: str) -> str:
+    async def rewrite_query(
+        self,
+        query: str,
+        guidance: str = "",
+        clarification: str | None = None,
+    ) -> str:
         template = self._prompt_provider.read_prompt(AgentPromptConstants.REWRITE_USER_QUERY)
         response = await run_prompt(
             self.kernel, template, RewriteQueryResponse,
             query=query, currentDate=datetime.now(timezone.utc).date().isoformat(),
+            guidance=guidance,
+            clarification=clarification,
         )
         return response.query or query  # fall back to the original question
 

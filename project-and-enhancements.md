@@ -66,7 +66,7 @@ during development. It is not a claim that every model response is correct.
 
 ## Verification snapshot
 
-- Latest recorded offline regression run: **98 tests passed**.
+- Latest recorded offline regression run: **105 tests passed**.
 - Baseline extraction was checked against the original ranking algorithm.
 - Hybrid tests cover independent lexical recovery, fusion scores, deduplication,
   candidate limits, and deterministic ties.
@@ -86,7 +86,7 @@ Their IDs are stable references; the order below does not establish priority.
 | ID | Enhancement | Status | Intended outcome | Acceptance criteria / experiment |
 |---|---|---|---|---|
 | ENH-001 | Selectable question-rewrite modes | In progress | Compare current unconditional rewriting with original-question and conditional modes | Keep `always` as baseline; add `off` and `conditional`; record decisions, SQL correctness, latency, and model-call counts |
-| ENH-002 | Structured clarification outcomes | Proposed | Avoid silently choosing an ambiguous business definition | Represent preserve/normalize/clarify outcomes; surface clarification to the caller; never send an unresolved request for SQL execution |
+| ENH-002 | Structured clarification outcomes | In progress | Avoid silently choosing an ambiguous business definition | Represent preserve/normalize/clarify outcomes; surface clarification to the caller; never send an unresolved request for SQL execution |
 | ENH-003 | Explicit relative-date normalization | Proposed | Make temporal interpretation reproducible | Define timezone and calendar boundaries; preserve original wording and resolved range; test month/year boundaries and explicit dates |
 | ENH-004 | History-aware follow-up rewriting | Proposed | Resolve requests such as "now group those by category" | Pass relevant conversation context; test standalone and follow-up questions; do not share history between independent simulation cases |
 | ENH-005 | Relationship-aware description retrieval | Proposed | Recover necessary join tables missed by top-k retrieval | Expand only from relationships in AI descriptions; bound expansion; evaluate table recall without reading live schema |

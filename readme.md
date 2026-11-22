@@ -110,14 +110,21 @@ Use the explicit interpreter above if VS Code or the terminal reports `ModuleNot
 - `--retriever baseline|hybrid`: selects retrieval behavior; baseline is the default.
 - `--rewrite-mode always|off|conditional`: selects question rewriting behavior;
   `always` is the default baseline, `off` uses the original question, and
-  `conditional` currently preserves the original question as a placeholder until
-  conditional decision rules are implemented.
+  `conditional` rewrites only when question analysis returns `normalize`.
 
 The rewrite mode is a request/session setting passed to each agent invocation; it
 is not stored in the persisted agent definition.
 
 When rewriting changes the question, verbose output records both the original and
-rewritten questions after the answer is generated.
+rewritten questions after the answer is generated. Interactive requests also
+display both questions and ask for confirmation before SQL generation. Answering
+`no` aborts the query and returns to the next interactive question. Simulation
+automatically accepts rewritten questions and records the decision.
+
+Question analysis is performed before rewrite-mode handling. It returns
+`preserve`, `normalize`, or `clarify`; the analysis provides guidance only, while
+the existing rewrite prompt produces any rewritten question. Clarification is
+kept in the current request and is not stored in the persisted agent definition.
 
 Simulation makes live Azure calls and can incur charges. It cannot be combined with
 a positional question. Without `--rebuild`, persisted agent definitions are reused.
@@ -335,7 +342,7 @@ Run the offline regression tests:
   equivalence, independent lexical recovery, exact rank-fusion scores, deduplication,
   deterministic ties, candidate limits, persisted corpus loading, and error propagation.
 
-The latest recorded offline run passed **98 tests**. These tests use mocked model responses and do not establish description-only model accuracy or hybrid superiority.
+The latest recorded offline run passed **105 tests**. These tests use mocked model responses and do not establish description-only model accuracy or hybrid superiority.
 
 The existing [test.py](src/test.py) is a separate live integration/evaluation suite:
 

@@ -14,6 +14,19 @@ Rephrase the user's database question for clarity without expanding its scope.
 
 Current UTC date: {{currentDate}}
 
+# Analysis guidance
+
+Use the following guidance from the question-analysis step when it is present.
+It is guidance only; preserve the original scope and do not invent information.
+
+{{guidance}}
+
+# User clarification
+
+If supplied, incorporate this clarification without adding any other assumptions:
+
+{{clarification}}
+
 # Examples
 
 - "List all products." -> "List all products."

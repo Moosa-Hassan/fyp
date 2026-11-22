@@ -34,7 +34,10 @@ async def test_single_question_forwards_rebuild_retriever_and_rewrite_mode(
         options=DatabasePluginOptions(retriever=retriever),
     )
     agent.invoke.assert_awaited_once_with(
-        "How many products?", rewrite_mode=rewrite_mode
+        "How many products?",
+        rewrite_mode=rewrite_mode,
+        clarification=None,
+        confirm_rewrite=main._confirm_rewrite,
     )
 
 
@@ -165,3 +168,25 @@ def test_cli_rejects_unknown_rewrite_mode(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         main.main()
     assert exc.value.code == 2
+
+
+def test_cli_continues_after_aborted_interactive_query(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["main.py"])
+    with (
+        patch(
+            "builtins.input",
+            side_effect=["first question", "second question"],
+        ) as prompt,
+        patch.object(
+            main,
+            "run",
+            new_callable=AsyncMock,
+            side_effect=[main.QueryAborted(), "answer"],
+        ) as run,
+    ):
+        main.main()
+
+    assert prompt.call_count == 2
+    assert run.await_args_list[0].args == ("first question",)
+    assert run.await_args_list[1].args == ("second question",)
+    assert "Query aborted. Enter another question." in capsys.readouterr().out

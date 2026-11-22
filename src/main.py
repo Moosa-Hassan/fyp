@@ -4,7 +4,12 @@ import logging
 from typing import Literal
 
 from DatabaseAgent import AgentKernelFactory, DatabaseAgentFactory
-from DatabaseAgent.DatabaseAgent import DatabaseKernelAgent, RewriteMode
+from DatabaseAgent.DatabaseAgent import (
+    ClarificationRequired,
+    DatabaseKernelAgent,
+    QueryAborted,
+    RewriteMode,
+)
 from DatabaseAgent.DatabasePluginOptions import DatabasePluginOptions
 from simulation_cases import TEST_CASES
 
@@ -31,12 +36,40 @@ async def run(
     rewrite_mode: RewriteMode = "always",
 ) -> str:
     agent = await create_agent(rebuild, retriever)
-    answer = await agent.invoke(question, rewrite_mode=rewrite_mode)
+    clarification = None
 
-    if not answer:
-        raise RuntimeError("agent returned no answer")
+    for _ in range(3):
+        try:
+            answer = await agent.invoke(
+                question,
+                rewrite_mode=rewrite_mode,
+                clarification=clarification,
+                confirm_rewrite=_confirm_rewrite,
+            )
+        except ClarificationRequired as ex:
+            print(f"\nClarification needed: {ex.question}")
+            clarification = input("Clarification: ").strip()
+            if not clarification:
+                raise RuntimeError("a clarification is required") from ex
+            continue
 
-    return answer
+        if not answer:
+            raise RuntimeError("agent returned no answer")
+        return answer
+
+    raise RuntimeError("clarification limit reached")
+
+
+def _confirm_rewrite(original: str, rewritten: str) -> bool:
+    print(f"\nOriginal question:\n{original}", flush=True)
+    print(f"\nRewritten question:\n{rewritten}", flush=True)
+    while True:
+        response = input("\nProceed with this query? [yes/no]: ").strip().lower()
+        if response in {"yes", "y"}:
+            return True
+        if response in {"no", "n"}:
+            return False
+        print("Please answer yes or no.", flush=True)
 
 
 async def run_simulation(
@@ -100,21 +133,40 @@ def main() -> None:
             )
         )
         return
-    if not question:
-        question = input("Question: ").strip()
-    if not question:
-        parser.error("a question is required")
-
-    print(
-        asyncio.run(
-            run(
-                question,
-                rebuild=args.rebuild,
-                retriever=args.retriever,
-                rewrite_mode=args.rewrite_mode,
+    if question:
+        try:
+            print(
+                asyncio.run(
+                    run(
+                        question,
+                        rebuild=args.rebuild,
+                        retriever=args.retriever,
+                        rewrite_mode=args.rewrite_mode,
+                    )
+                )
             )
-        )
-    )
+        except QueryAborted:
+            print("Query aborted.")
+        return
+
+    while True:
+        question = input("Question: ").strip()
+        if not question:
+            parser.error("a question is required")
+        try:
+            print(
+                asyncio.run(
+                    run(
+                        question,
+                        rebuild=args.rebuild,
+                        retriever=args.retriever,
+                        rewrite_mode=args.rewrite_mode,
+                    )
+                )
+            )
+            return
+        except QueryAborted:
+            print("Query aborted. Enter another question.")
 
 
 if __name__ == "__main__":

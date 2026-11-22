@@ -8,6 +8,7 @@ class AgentPromptConstants:
     EXPLAIN_TABLE = "ExplainTable"
     WRITE_SQL_QUERY = "WriteSQLQuery"
     REWRITE_USER_QUERY = "RewriteUserQuery"
+    ANALYZE_USER_QUERY = "AnalyzeUserQuery"
     EXTRACT_TABLE_NAME = "ExtractTableName"
 
 

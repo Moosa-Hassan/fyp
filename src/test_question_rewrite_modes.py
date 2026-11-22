@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from DatabaseAgent.DatabaseAgent import DatabaseKernelAgent
+from DatabaseAgent.DatabaseAgent import (
+    ClarificationRequired,
+    DatabaseKernelAgent,
+    QueryAborted,
+)
+from DatabaseAgent.QueryAnalysisResponse import QueryAnalysisResponse
 
 
 def make_agent() -> DatabaseKernelAgent:
@@ -17,6 +22,9 @@ def make_agent() -> DatabaseKernelAgent:
     )
     agent._generate_final_answer = AsyncMock(return_value="answer")
     agent._plugin.execute_query_async = AsyncMock(return_value="result")
+    agent.analyze_query = AsyncMock(
+        return_value=QueryAnalysisResponse(outcome="preserve")
+    )
     return agent
 
 
@@ -46,6 +54,72 @@ async def test_rewrite_modes_select_query(
         prompt=expected_query,
         original_query="original question",
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "outcome", "expected_query", "calls_rewrite"),
+    [
+        ("always", "normalize", "rewritten question", 1),
+        ("conditional", "normalize", "rewritten question", 1),
+        ("conditional", "preserve", "original question", 0),
+        ("off", "normalize", "original question", 0),
+    ],
+)
+async def test_analysis_controls_conditional_rewriting(
+    mode, outcome, expected_query, calls_rewrite
+):
+    agent = make_agent()
+    agent.analyze_query = AsyncMock(
+        return_value=QueryAnalysisResponse(outcome=outcome, guidance="normalize dates")
+    )
+    agent.rewrite_query = AsyncMock(return_value="rewritten question")
+
+    await agent.invoke(
+        "original question",
+        rewrite_mode=mode,
+        clarification="user clarification",
+    )
+
+    if calls_rewrite:
+        agent.rewrite_query.assert_awaited_once_with(
+            "original question",
+            guidance="normalize dates",
+            clarification="user clarification",
+        )
+    else:
+        agent.rewrite_query.assert_not_awaited()
+    assert agent._plugin.execute_query_async.await_args.kwargs["prompt"] == expected_query
+
+
+@pytest.mark.asyncio
+async def test_clarify_blocks_sql():
+    agent = make_agent()
+    agent.analyze_query = AsyncMock(
+        return_value=QueryAnalysisResponse(
+            outcome="clarify",
+            clarification_question="What does active mean?",
+        )
+    )
+
+    with pytest.raises(ClarificationRequired, match="What does active mean"):
+        await agent.invoke("How many active customers?")
+
+    agent._plugin.execute_query_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rewrite_requires_confirmation_before_sql():
+    agent = make_agent()
+    agent.rewrite_query = AsyncMock(return_value="rewritten question")
+
+    with pytest.raises(QueryAborted):
+        await agent.invoke(
+            "original question",
+            confirm_rewrite=lambda original, rewritten: False,
+        )
+
+    agent._plugin.execute_query_async.assert_not_awaited()
 
 
 @pytest.mark.asyncio
