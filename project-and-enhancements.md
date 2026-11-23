@@ -66,7 +66,7 @@ during development. It is not a claim that every model response is correct.
 
 ## Verification snapshot
 
-- Latest recorded offline regression run: **105 tests passed**.
+- Latest recorded offline regression run: **106 tests passed**.
 - Baseline extraction was checked against the original ranking algorithm.
 - Hybrid tests cover independent lexical recovery, fusion scores, deduplication,
   candidate limits, and deterministic ties.

@@ -115,6 +115,11 @@ Use the explicit interpreter above if VS Code or the terminal reports `ModuleNot
 The rewrite mode is a request/session setting passed to each agent invocation; it
 is not stored in the persisted agent definition.
 
+In `off` mode, resolved clarification is appended directly to the original
+question in the form `<original question> Clarification: <clarification>`.
+This is passed to SQL generation without calling the rewrite model or requesting
+rewrite confirmation.
+
 When rewriting changes the question, verbose output records both the original and
 rewritten questions after the answer is generated. Interactive requests also
 display both questions and ask for confirmation before SQL generation. Answering
@@ -342,7 +347,7 @@ Run the offline regression tests:
   equivalence, independent lexical recovery, exact rank-fusion scores, deduplication,
   deterministic ties, candidate limits, persisted corpus loading, and error propagation.
 
-The latest recorded offline run passed **105 tests**. These tests use mocked model responses and do not establish description-only model accuracy or hybrid superiority.
+The latest recorded offline run passed **106 tests**. These tests use mocked model responses and do not establish description-only model accuracy or hybrid superiority.
 
 The existing [test.py](src/test.py) is a separate live integration/evaluation suite:
 

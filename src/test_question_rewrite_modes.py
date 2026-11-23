@@ -63,7 +63,12 @@ async def test_rewrite_modes_select_query(
         ("always", "normalize", "rewritten question", 1),
         ("conditional", "normalize", "rewritten question", 1),
         ("conditional", "preserve", "original question", 0),
-        ("off", "normalize", "original question", 0),
+        (
+            "off",
+            "normalize",
+            "original question Clarification: user clarification",
+            0,
+        ),
     ],
 )
 async def test_analysis_controls_conditional_rewriting(
@@ -120,6 +125,31 @@ async def test_rewrite_requires_confirmation_before_sql():
         )
 
     agent._plugin.execute_query_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_off_appends_clarification_without_rewriting_or_confirmation():
+    agent = make_agent()
+    agent.rewrite_query = AsyncMock(return_value="rewritten question")
+    confirm_rewrite = Mock(return_value=False)
+
+    await agent.invoke(
+        "How many active customers?",
+        rewrite_mode="off",
+        clarification="Active means customers with an active subscription.",
+        confirm_rewrite=confirm_rewrite,
+    )
+
+    agent.rewrite_query.assert_not_awaited()
+    confirm_rewrite.assert_not_called()
+    agent._plugin.execute_query_async.assert_awaited_once_with(
+        kernel=agent.kernel,
+        prompt=(
+            "How many active customers? Clarification: "
+            "Active means customers with an active subscription."
+        ),
+        original_query="How many active customers?",
+    )
 
 
 @pytest.mark.asyncio

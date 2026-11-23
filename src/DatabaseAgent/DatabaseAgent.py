@@ -156,7 +156,11 @@ class DatabaseKernelAgent:
         if rewritten != last_user:
             logger.info("Original query: %s", last_user)
             logger.info("Rewritten query: %s", rewritten)
-            if confirm_rewrite is not None and not confirm_rewrite(last_user, rewritten):
+            if (
+                rewrite_mode != "off"
+                and confirm_rewrite is not None
+                and not confirm_rewrite(last_user, rewritten)
+            ):
                 logger.info("User aborted the rewritten query.")
                 raise QueryAborted()
 
@@ -198,6 +202,8 @@ class DatabaseKernelAgent:
         clarification: str | None,
     ) -> str:
         if rewrite_mode == "off":
+            if clarification and clarification.strip():
+                return f"{query} Clarification: {clarification.strip()}"
             return query
 
         if rewrite_mode == "conditional" and analysis.outcome != "normalize":
